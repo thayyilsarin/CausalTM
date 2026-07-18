@@ -178,7 +178,12 @@ class ReportGenerator:
         components = dfd_model.get("elements", [])
 
         # Extract causal insights
-        attack_paths = self._format_attack_paths(causal_result.get("attack_paths", {}))
+        # Use concrete attack graph paths if available, fall back to element-level scores
+        raw_attack_paths = causal_result.get("causal_attack_graph", {}).get("paths", [])
+        if raw_attack_paths:
+            attack_paths = raw_attack_paths[:10]
+        else:
+            attack_paths = self._format_attack_paths(causal_result.get("attack_paths", {}))
         counterfactuals = causal_result.get("counterfactuals", [])
         confounders = causal_result.get("confounders", [])
         mediators = causal_result.get("mediators", [])
@@ -338,7 +343,16 @@ class ReportGenerator:
 
         for threat in threats:
             category = threat.get("category", "Unknown")
-            if category in grouped:
+            # Handle enum string representation (e.g., "StrideCategory.SPOOFING" → "Spoofing")
+            category_str = str(category)
+            if "." in category_str:
+                category_str = category_str.split(".")[-1].replace("_", " ").title()
+            # Also handle direct enum values
+            if hasattr(category, 'value'):
+                category_str = category.value
+            if category_str in grouped:
+                grouped[category_str].append(threat)
+            elif category in grouped:
                 grouped[category].append(threat)
 
         return [
@@ -352,7 +366,13 @@ class ReportGenerator:
         counts: dict[str, int] = {}
         for threat in threats:
             value = threat.get(field, "Unknown")
-            counts[value] = counts.get(value, 0) + 1
+            # Handle enum representations
+            value_str = str(value)
+            if "." in value_str:
+                value_str = value_str.split(".")[-1].replace("_", " ").title()
+            if hasattr(value, 'value'):
+                value_str = value.value
+            counts[value_str] = counts.get(value_str, 0) + 1
         return counts
 
     def _calculate_risk_score(self, threats: list[dict]) -> float:
