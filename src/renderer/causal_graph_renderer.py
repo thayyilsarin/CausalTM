@@ -169,15 +169,16 @@ class CausalGraphRenderer:
             dot.attr("edge", fontname=self.FONT, fontsize="7")
 
             # Layer 1: Edge Nodes (inputs FROM sub-graphs)
-            # Group by source layer
+            # Group by source layer — ONLY include layers that produced edge nodes
             layers = {"sast": [], "dast": [], "repo": []}
             for en_id, en in master_dag._edge_nodes.items():
-                if en.layer in layers:
+                # Only include edge nodes with actual values (skip empty layers)
+                if en.layer in layers and en.value > 0.001:
                     layers[en.layer].append(en)
 
             for layer_name, edge_nodes in layers.items():
                 if not edge_nodes:
-                    continue
+                    continue  # Skip entirely empty layers (e.g., DAST when no scan ran)
 
                 color = self.LAYER_COLORS.get(layer_name, "#3498db")
                 cluster_name = f"cluster_edge_{layer_name}"

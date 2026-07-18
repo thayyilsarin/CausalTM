@@ -293,17 +293,30 @@
     {% if attack_paths %}
     <div class="section">
         <h2>5. Attack Paths (Causal Analysis)</h2>
-        <p>The following attack paths were identified through causal graph analysis:</p>
-        {% for path in attack_paths[:10] %}
-        <div class="attack-path">
-            <span class="score">Score: {{ "%.2f"|format(path.score) }}</span>
-            &nbsp; {{ path.node_names | join(' &rarr; ') }}
-            {% if path.crosses_trust_boundary %}<em>(crosses trust boundary)</em>{% endif %}
-        </div>
-        {% endfor %}
+        <p>The following causal attack paths trace how an attacker could move through the system. Score reflects exploitability, path length, trust boundary crossings, and runtime confirmation.</p>
+        <table class="threat-table">
+            <thead>
+                <tr>
+                    <th>Score</th>
+                    <th>Attack Path</th>
+                    <th>Boundary</th>
+                    <th>Confirmed</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for path in attack_paths[:10] %}
+                <tr>
+                    <td><strong>{{ "%.2f"|format(path.score) }}</strong></td>
+                    <td>{{ path.path_names | join(' &rarr; ') }}</td>
+                    <td>{{ 'Yes' if path.crosses_trust_boundary else 'No' }}</td>
+                    <td>{{ 'Yes' if path.has_confirmed_steps else 'No' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
 
         {% if attack_graph_svg %}
-        <h3>Causal Attack Graph</h3>
+        <h3>Causal Attack Graph (Visual)</h3>
         <div class="diagram-container" style="max-width:100%; overflow-x:auto;">
             {{ attack_graph_svg | safe }}
         </div>

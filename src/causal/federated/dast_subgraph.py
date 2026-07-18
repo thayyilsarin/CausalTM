@@ -93,7 +93,18 @@ class DASTSubGraph(CausalSubGraph):
         )
 
     def compute_edge_nodes(self) -> list[EdgeNode]:
-        """Compute edge nodes for the master DAG."""
+        """
+        Compute edge nodes for the master DAG.
+        
+        IMPORTANT: If no DAST findings exist, return EMPTY list.
+        Edge nodes should only be produced when the sub-graph has
+        actual data to reason about. Empty sub-graphs contribute nothing.
+        """
+        # If no findings, this layer has nothing to contribute
+        if not self._findings:
+            self._edge_nodes = {}
+            return []
+
         edge_nodes = []
         total = max(len(self._findings), 1)
 

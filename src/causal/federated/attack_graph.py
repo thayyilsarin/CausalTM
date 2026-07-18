@@ -487,6 +487,7 @@ class CausalAttackGraph:
         for node_id in path:
             node = self._nodes.get(node_id)
             if node:
+                # Use the human-readable name from the AttackNode
                 path_names.append(node.name)
                 if node.node_type == "vulnerability":
                     cwe = node.metadata.get("cwe", "")
@@ -495,6 +496,12 @@ class CausalAttackGraph:
                 if node.is_confirmed:
                     has_confirmed = True
                     confirmed_count += 1
+            else:
+                # Fallback: clean up the raw node ID to be readable
+                clean_name = node_id.replace("process-", "").replace("data_store-", "")
+                clean_name = clean_name.replace("ext-", "").replace("vuln_", "Vuln: ")
+                clean_name = clean_name.replace("-", " ").replace("_", " ").title()
+                path_names.append(clean_name)
 
         # Check boundary crossings
         for i in range(len(path) - 1):
