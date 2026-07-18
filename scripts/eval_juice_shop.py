@@ -428,7 +428,7 @@ def main():
     diagram_dir = Path("data/diagrams")
     diagram_dir.mkdir(parents=True, exist_ok=True)
 
-    # Render DFD
+    # Render DFD (architecture diagram)
     diagram_svg_content = None
     try:
         from src.renderer.graphviz_renderer import GraphvizRenderer
@@ -440,6 +440,63 @@ def main():
             diagram_svg_content = svg_file.read_text(encoding="utf-8")
     except Exception as e:
         print(f"  DFD: SKIPPED ({e})")
+
+    # Render Causal Sub-Graphs + Master DAG (transparency)
+    try:
+        from src.renderer.causal_graph_renderer import CausalGraphRenderer
+        causal_renderer = CausalGraphRenderer()
+
+        # SAST Sub-Graph
+        sast_path = causal_renderer.render_subgraph(
+            engine.sast_subgraph,
+            title="SAST Sub-Graph (Code-Level Causal Reasoning)",
+            output_path=diagram_dir / "juice-shop-sast-subgraph.svg",
+        )
+        if sast_path:
+            print(f"  SAST Sub-Graph: {sast_path}")
+
+        # DAST Sub-Graph
+        dast_path = causal_renderer.render_subgraph(
+            engine.dast_subgraph,
+            title="DAST Sub-Graph (Runtime-Level Causal Reasoning)",
+            output_path=diagram_dir / "juice-shop-dast-subgraph.svg",
+        )
+        if dast_path:
+            print(f"  DAST Sub-Graph: {dast_path}")
+
+        # Repo Sub-Graph
+        repo_path = causal_renderer.render_subgraph(
+            engine.repo_subgraph,
+            title="Repo Sub-Graph (Architecture-Level Causal Reasoning)",
+            output_path=diagram_dir / "juice-shop-repo-subgraph.svg",
+        )
+        if repo_path:
+            print(f"  Repo Sub-Graph: {repo_path}")
+
+        # Master DAG
+        master_path = causal_renderer.render_master_dag(
+            engine.master_dag,
+            title="Master DAG — Cross-Layer Causal Reasoning",
+            output_path=diagram_dir / "juice-shop-master-dag.svg",
+        )
+        if master_path:
+            print(f"  Master DAG: {master_path}")
+
+        # Attack Graph (top 5 paths)
+        if engine.attack_graph:
+            attack_path = causal_renderer.render_attack_graph(
+                engine.attack_graph,
+                title="Causal Attack Graph — OWASP Juice Shop",
+                output_path=diagram_dir / "juice-shop-attack-graph.svg",
+                max_paths=5,
+            )
+            if attack_path:
+                print(f"  Attack Graph: {attack_path}")
+
+    except Exception as e:
+        print(f"  Causal Graphs: SKIPPED ({e})")
+        import traceback
+        traceback.print_exc()
 
     # Generate report
     reporter = ReportGenerator()
