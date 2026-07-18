@@ -1,11 +1,15 @@
 name: Juice Shop Evaluation
 
 on:
-  workflow_dispatch:  # Manual trigger only (this is an evaluation run, not CI)
+  workflow_dispatch:  # Manual trigger
   push:
     paths:
       - 'scripts/eval_juice_shop.py'
       - '.github/workflows/juice-shop-eval.yml'
+      - 'src/causal/federated/**'
+      - 'src/renderer/**'
+      - 'src/reporter/templates/**'
+      - 'src/stride/**'
 
 jobs:
   evaluate:
