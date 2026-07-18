@@ -1,0 +1,61 @@
+name: Juice Shop Evaluation
+
+on:
+  workflow_dispatch:  # Manual trigger only (this is an evaluation run, not CI)
+  push:
+    paths:
+      - 'scripts/eval_juice_shop.py'
+      - '.github/workflows/juice-shop-eval.yml'
+
+jobs:
+  evaluate:
+    name: Evaluate CausalTM on OWASP Juice Shop
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y graphviz
+
+      - name: Install Python dependencies
+        run: |
+          pip install networkx pydantic pyyaml jinja2 fastapi uvicorn gitpython lxml graphviz httpx python-multipart
+          pip install semgrep
+
+      - name: Clone OWASP Juice Shop
+        run: |
+          git clone --depth 1 https://github.com/juice-shop/juice-shop.git data/juice-shop
+          echo "Juice Shop cloned successfully"
+          ls data/juice-shop/
+
+      - name: Run Semgrep on Juice Shop (generate real SARIF)
+        run: |
+          cd data/juice-shop
+          semgrep --config "p/javascript" --config "p/typescript" --config "p/security-audit" --sarif -o ../../data/juice-shop-semgrep.sarif . || true
+          echo "SARIF file size:"
+          ls -la ../../data/juice-shop-semgrep.sarif
+          echo "Finding count:"
+          python3 -c "import json; d=json.load(open('../../data/juice-shop-semgrep.sarif')); print(f'Total findings: {sum(len(r.get(\"results\",[]))for r in d.get(\"runs\",[]))}')"
+
+      - name: Run CausalTM evaluation pipeline
+        run: python scripts/eval_juice_shop.py
+
+      - name: Upload evaluation results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: juice-shop-evaluation
+          path: |
+            data/reports/juice-shop-*.html
+            data/reports/juice-shop-*.md
+            data/diagrams/juice-shop-*.svg
+            data/eval-results.json
+            data/juice-shop-semgrep.sarif
+          retention-days: 30
