@@ -262,32 +262,30 @@
 
         {% for category in stride_categories %}
         <h3>{{ category.name }} ({{ category.threats | length }} threats)</h3>
-        {% for threat in category.threats %}
-        <div class="threat-card {{ threat.severity | lower }}">
-            <div class="title">
-                <span class="badge badge-{{ threat.severity | lower }}">{{ threat.severity }}</span>
-                {{ threat.title }}
-            </div>
-            <div class="meta">
-                Element: {{ threat.element_name }} | Confidence: {{ "%.0f"|format(threat.confidence * 100) }}%
-                {% if threat.is_confirmed %} | <strong>Confirmed Exploitable</strong>{% endif %}
-            </div>
-            <div class="description">{{ threat.description }}</div>
-            {% if threat.mitigations %}
-            <div class="mitigations">
-                <strong>Mitigations:</strong>
-                <ul>
-                    {% for mitigation in threat.mitigations %}
-                    <li>{{ mitigation }}</li>
-                    {% endfor %}
-                </ul>
-            </div>
-            {% endif %}
-            {% if threat.cwe_ids %}
-            <div class="meta">CWE: {{ threat.cwe_ids | join(', ') }}</div>
-            {% endif %}
-        </div>
-        {% endfor %}
+        <table class="threat-table">
+            <thead>
+                <tr>
+                    <th>Severity</th>
+                    <th>Threat</th>
+                    <th>Element</th>
+                    <th>Confidence</th>
+                    <th>CWE</th>
+                    <th>Key Mitigation</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for threat in category.threats %}
+                <tr>
+                    <td><span class="badge badge-{{ threat.severity | lower }}">{{ threat.severity }}</span></td>
+                    <td><strong>{{ threat.title }}</strong>{% if threat.is_confirmed %} <em>(Confirmed)</em>{% endif %}</td>
+                    <td>{{ threat.element_name }}</td>
+                    <td>{{ "%.0f"|format(threat.confidence * 100) }}%</td>
+                    <td>{{ threat.cwe_ids | join(', ') if threat.cwe_ids else '-' }}</td>
+                    <td>{{ threat.mitigations[0] if threat.mitigations else '-' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
         {% endfor %}
     </div>
 
@@ -299,10 +297,28 @@
         {% for path in attack_paths[:10] %}
         <div class="attack-path">
             <span class="score">Score: {{ "%.2f"|format(path.score) }}</span>
-            &nbsp; {{ path.node_names | join(' → ') }}
+            &nbsp; {{ path.node_names | join(' &rarr; ') }}
             {% if path.crosses_trust_boundary %}<em>(crosses trust boundary)</em>{% endif %}
         </div>
         {% endfor %}
+
+        {% if attack_graph_svg %}
+        <h3>Causal Attack Graph</h3>
+        <div class="diagram-container" style="max-width:100%; overflow-x:auto;">
+            {{ attack_graph_svg | safe }}
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Master DAG (Federated Causal Model) -->
+    {% if master_dag_svg %}
+    <div class="section">
+        <h2>5b. Federated Causal Model (Master DAG)</h2>
+        <p>The Master DAG shows how edge nodes from each layer (SAST, DAST, Architecture) combine through intermediate causal variables to determine overall risk.</p>
+        <div class="diagram-container" style="max-width:100%; overflow-x:auto;">
+            {{ master_dag_svg | safe }}
+        </div>
     </div>
     {% endif %}
 

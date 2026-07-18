@@ -500,11 +500,24 @@ def main():
 
     # Generate report
     reporter = ReportGenerator()
+
+    # Read Master DAG and Attack Graph SVGs if they were rendered
+    master_dag_svg = None
+    attack_graph_svg = None
+    master_svg_file = diagram_dir / "juice-shop-master-dag.svg"
+    attack_svg_file = diagram_dir / "juice-shop-attack-graph.svg"
+    if master_svg_file.exists():
+        master_dag_svg = master_svg_file.read_text(encoding="utf-8")
+    if attack_svg_file.exists():
+        attack_graph_svg = attack_svg_file.read_text(encoding="utf-8")
+
     reporter.generate_from_data(
         dfd_model=dfd_model,
         threats=threats,
         causal_result=causal_result,
         diagram_svg=diagram_svg_content,
+        master_dag_svg=master_dag_svg,
+        attack_graph_svg=attack_graph_svg,
         project_name="OWASP Juice Shop",
         scan_id="juice-shop-eval",
         output_path=output_dir / "juice-shop-report.html",

@@ -75,6 +75,8 @@ class ReportGenerator:
         threats: list[dict],
         causal_result: Optional[dict] = None,
         diagram_svg: Optional[str] = None,
+        master_dag_svg: Optional[str] = None,
+        attack_graph_svg: Optional[str] = None,
         project_name: str = "Unknown Project",
         scan_id: str = "manual",
         output_path: Optional[Path] = None,
@@ -104,6 +106,8 @@ class ReportGenerator:
             threats=threats,
             causal_result=causal_result,
             diagram_svg=diagram_svg,
+            master_dag_svg=master_dag_svg,
+            attack_graph_svg=attack_graph_svg,
             project_name=project_name,
             scan_id=scan_id,
         )
@@ -154,6 +158,8 @@ class ReportGenerator:
         threats: list[dict],
         causal_result: Optional[dict] = None,
         diagram_svg: Optional[str] = None,
+        master_dag_svg: Optional[str] = None,
+        attack_graph_svg: Optional[str] = None,
         project_name: str = "Unknown",
         scan_id: str = "manual",
         branch: str = "main",
@@ -208,6 +214,8 @@ class ReportGenerator:
             "attack_paths_count": len(attack_paths),
             # Diagram
             "diagram_svg": diagram_svg,
+            "master_dag_svg": master_dag_svg,
+            "attack_graph_svg": attack_graph_svg,
             # Components
             "components": components,
             # Threats by STRIDE category
