@@ -1,0 +1,90 @@
+name: CausalTM CI Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  # ──── JOB 1: Lint and Type Check ──────────────────────────────────────
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install ruff mypy
+          pip install pydantic networkx pyyaml jinja2 fastapi
+
+      - name: Run Ruff (linter)
+        run: ruff check src/ --output-format=github || true
+
+      - name: Run MyPy (type check)
+        run: mypy src/ --ignore-missing-imports || true
+
+  # ──── JOB 2: Unit Tests ────────────────────────────────────────────────
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install networkx pydantic pyyaml jinja2 fastapi uvicorn gitpython lxml graphviz httpx python-multipart
+
+      - name: Run engine test
+        run: python scripts/test_engine.py
+
+  # ──── JOB 3: Full Pipeline Demo ────────────────────────────────────────
+  pipeline-demo:
+    name: Full Pipeline Demo
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies (Graphviz)
+        run: sudo apt-get update && sudo apt-get install -y graphviz
+
+      - name: Install Python dependencies
+        run: |
+          pip install networkx pydantic pyyaml jinja2 fastapi uvicorn gitpython lxml graphviz httpx python-multipart
+
+      - name: Run full pipeline demo
+        run: python scripts/demo_full_pipeline.py
+
+      - name: Upload DFD diagram artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dfd-diagram
+          path: data/diagrams/
+          retention-days: 30
+
+      - name: Upload threat report artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: threat-report
+          path: data/reports/
+          retention-days: 30
