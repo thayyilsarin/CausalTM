@@ -1,0 +1,91 @@
+version: "3.8"
+
+services:
+  # ──── CausalTM API Server ────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: causaltm-api
+    ports:
+      - "8000:8000"
+    environment:
+      - CAUSALTM_DEBUG=true
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql://causaltm:causaltm@postgres:5432/causaltm
+    volumes:
+      - ./data:/app/data
+      - ./rules:/app/rules
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - causaltm-net
+
+  # ──── Celery Worker (async scan processing) ──────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: causaltm-worker
+    command: celery -A src.worker worker --loglevel=info --concurrency=2
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql://causaltm:causaltm@postgres:5432/causaltm
+    volumes:
+      - ./data:/app/data
+      - ./rules:/app/rules
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - causaltm-net
+
+  # ──── Redis (task queue + caching) ───────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: causaltm-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - causaltm-net
+
+  # ──── PostgreSQL (scan results + metadata) ───────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: causaltm-postgres
+    environment:
+      POSTGRES_USER: causaltm
+      POSTGRES_PASSWORD: causaltm
+      POSTGRES_DB: causaltm
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U causaltm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - causaltm-net
+
+volumes:
+  postgres_data:
+
+networks:
+  causaltm-net:
+    driver: bridge

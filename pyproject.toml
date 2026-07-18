@@ -1,0 +1,68 @@
+[project]
+name = "causaltm"
+version = "0.1.0"
+description = "Causal AI-driven automated STRIDE threat modeling from SAST/DAST correlation"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "CausalTM Team"}
+]
+
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.27.0",
+    "pydantic>=2.6.0",
+    "networkx>=3.2",
+    "pgmpy>=0.0.21",
+    "dowhy>=0.11",
+    "pygraphviz>=1.12",
+    "graphviz>=0.20",
+    "pyyaml>=6.0",
+    "jinja2>=3.1.3",
+    "weasyprint>=61.0",
+    "gitpython>=3.1.41",
+    "celery[redis]>=5.3.6",
+    "redis>=5.0.0",
+    "sqlalchemy>=2.0.25",
+    "psycopg2-binary>=2.9.9",
+    "httpx>=0.27.0",
+    "sarif-om>=1.0.4",
+    "lxml>=5.1.0",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.2.0",
+    "mypy>=1.8.0",
+    "pre-commit>=3.6.0",
+]
+
+[project.scripts]
+causaltm = "src.main:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true

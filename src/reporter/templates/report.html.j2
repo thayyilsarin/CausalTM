@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - Threat Model Report</title>
+    <style>
+        :root {
+            --critical: #9b2335;
+            --high: #e74c3c;
+            --medium: #f39c12;
+            --low: #27ae60;
+            --info: #3498db;
+            --bg: #ffffff;
+            --text: #2c3e50;
+            --border: #ecf0f1;
+            --header-bg: #2c3e50;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; color: var(--text); line-height: 1.6; }
+        .container { max-width: 1100px; margin: 0 auto; padding: 2rem; }
+
+        /* Header */
+        .report-header {
+            background: var(--header-bg);
+            color: white;
+            padding: 2rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+        }
+        .report-header h1 { font-size: 1.8rem; margin-bottom: 0.5rem; }
+        .report-header .meta { opacity: 0.8; font-size: 0.9rem; }
+
+        /* Executive Summary */
+        .executive-summary {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            border-left: 4px solid var(--info);
+        }
+        .risk-score {
+            font-size: 3rem;
+            font-weight: bold;
+            text-align: center;
+            padding: 1rem;
+        }
+        .risk-score.critical { color: var(--critical); }
+        .risk-score.high { color: var(--high); }
+        .risk-score.medium { color: var(--medium); }
+        .risk-score.low { color: var(--low); }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+        .stat-card {
+            background: white;
+            border-radius: 6px;
+            padding: 1rem;
+            text-align: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .stat-card .number { font-size: 2rem; font-weight: bold; }
+        .stat-card .label { font-size: 0.8rem; color: #666; text-transform: uppercase; }
+
+        /* Sections */
+        .section { margin-bottom: 2rem; }
+        .section h2 {
+            font-size: 1.4rem;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        .section h3 { font-size: 1.1rem; margin: 1rem 0 0.5rem; }
+
+        /* Diagram */
+        .diagram-container {
+            text-align: center;
+            background: #fafafa;
+            border-radius: 8px;
+            padding: 1rem;
+            border: 1px solid var(--border);
+            margin: 1rem 0;
+        }
+        .diagram-container img { max-width: 100%; height: auto; }
+
+        /* Threat table */
+        .threat-table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+        .threat-table th, .threat-table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        .threat-table th { background: #f8f9fa; font-weight: 600; }
+        .threat-table tr:hover { background: #f8f9fa; }
+
+        /* Severity badges */
+        .badge {
+            display: inline-block;
+            padding: 0.2rem 0.6rem;
+            border-radius: 3px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: white;
+        }
+        .badge-critical { background: var(--critical); }
+        .badge-high { background: var(--high); }
+        .badge-medium { background: var(--medium); }
+        .badge-low { background: var(--low); }
+        .badge-informational { background: var(--info); }
+
+        /* Threat cards */
+        .threat-card {
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-left: 4px solid #ccc;
+        }
+        .threat-card.critical { border-left-color: var(--critical); }
+        .threat-card.high { border-left-color: var(--high); }
+        .threat-card.medium { border-left-color: var(--medium); }
+        .threat-card.low { border-left-color: var(--low); }
+
+        .threat-card .title { font-weight: 600; margin-bottom: 0.3rem; }
+        .threat-card .meta { font-size: 0.85rem; color: #666; margin-bottom: 0.5rem; }
+        .threat-card .description { margin-bottom: 0.5rem; }
+        .threat-card .mitigations { font-size: 0.9rem; }
+        .threat-card .mitigations li { margin-left: 1.5rem; margin-bottom: 0.3rem; }
+
+        /* Attack paths */
+        .attack-path {
+            background: #fff3e0;
+            border-radius: 6px;
+            padding: 1rem;
+            margin-bottom: 0.5rem;
+            font-family: monospace;
+            font-size: 0.85rem;
+        }
+        .attack-path .score { font-weight: bold; color: var(--high); }
+
+        /* Causal insights */
+        .insight-card {
+            background: #e8f5e9;
+            border-radius: 6px;
+            padding: 1rem;
+            margin-bottom: 0.5rem;
+        }
+        .insight-card.warning { background: #fff3e0; }
+        .insight-card .effectiveness { font-weight: bold; color: var(--low); }
+
+        /* Footer */
+        .report-footer {
+            margin-top: 3rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+            font-size: 0.8rem;
+            color: #999;
+            text-align: center;
+        }
+
+        @media print {
+            .container { max-width: 100%; }
+            .threat-card { break-inside: avoid; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <!-- Header -->
+    <div class="report-header">
+        <h1>{{ title }}</h1>
+        <div class="meta">
+            Generated: {{ generated_at }} | Scan ID: {{ scan_id }} | Branch: {{ branch }}
+        </div>
+    </div>
+
+    <!-- Executive Summary -->
+    <div class="section">
+        <h2>1. Executive Summary</h2>
+        <div class="executive-summary">
+            <div class="risk-score {{ risk_rating_class }}">
+                Risk Score: {{ "%.1f"|format(risk_score) }} / 10
+            </div>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="number">{{ total_threats }}</div>
+                    <div class="label">Total Threats</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number" style="color: var(--critical)">{{ critical_count }}</div>
+                    <div class="label">Critical</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number" style="color: var(--high)">{{ high_count }}</div>
+                    <div class="label">High</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number" style="color: var(--medium)">{{ medium_count }}</div>
+                    <div class="label">Medium</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number">{{ components_count }}</div>
+                    <div class="label">Components</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number">{{ attack_paths_count }}</div>
+                    <div class="label">Attack Paths</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Data Flow Diagram -->
+    <div class="section">
+        <h2>2. Data Flow Diagram</h2>
+        <div class="diagram-container">
+            {% if diagram_svg %}
+            {{ diagram_svg | safe }}
+            {% else %}
+            <p><em>Diagram not available. Run the renderer to generate the DFD.</em></p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Component Inventory -->
+    <div class="section">
+        <h2>3. Component Inventory</h2>
+        <table class="threat-table">
+            <thead>
+                <tr>
+                    <th>Component</th>
+                    <th>Type</th>
+                    <th>Technology</th>
+                    <th>Public</th>
+                    <th>Auth</th>
+                    <th>Encryption</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for comp in components %}
+                <tr>
+                    <td><strong>{{ comp.name }}</strong></td>
+                    <td>{{ comp.element_type }}</td>
+                    <td>{{ comp.technology or '-' }}</td>
+                    <td>{{ 'Yes' if comp.is_public_facing else 'No' }}</td>
+                    <td>{{ 'Yes' if comp.has_authentication else 'No' }}</td>
+                    <td>{{ 'Yes' if comp.has_encryption else 'No' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- STRIDE Threat Catalog -->
+    <div class="section">
+        <h2>4. STRIDE Threat Catalog</h2>
+
+        {% for category in stride_categories %}
+        <h3>{{ category.name }} ({{ category.threats | length }} threats)</h3>
+        {% for threat in category.threats %}
+        <div class="threat-card {{ threat.severity | lower }}">
+            <div class="title">
+                <span class="badge badge-{{ threat.severity | lower }}">{{ threat.severity }}</span>
+                {{ threat.title }}
+            </div>
+            <div class="meta">
+                Element: {{ threat.element_name }} | Confidence: {{ "%.0f"|format(threat.confidence * 100) }}%
+                {% if threat.is_confirmed %} | <strong>Confirmed Exploitable</strong>{% endif %}
+            </div>
+            <div class="description">{{ threat.description }}</div>
+            {% if threat.mitigations %}
+            <div class="mitigations">
+                <strong>Mitigations:</strong>
+                <ul>
+                    {% for mitigation in threat.mitigations %}
+                    <li>{{ mitigation }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            {% if threat.cwe_ids %}
+            <div class="meta">CWE: {{ threat.cwe_ids | join(', ') }}</div>
+            {% endif %}
+        </div>
+        {% endfor %}
+        {% endfor %}
+    </div>
+
+    <!-- Attack Paths (Causal Analysis) -->
+    {% if attack_paths %}
+    <div class="section">
+        <h2>5. Attack Paths (Causal Analysis)</h2>
+        <p>The following attack paths were identified through causal graph analysis:</p>
+        {% for path in attack_paths[:10] %}
+        <div class="attack-path">
+            <span class="score">Score: {{ "%.2f"|format(path.score) }}</span>
+            &nbsp; {{ path.node_names | join(' → ') }}
+            {% if path.crosses_trust_boundary %}<em>(crosses trust boundary)</em>{% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Causal Insights -->
+    {% if counterfactuals %}
+    <div class="section">
+        <h2>6. Mitigation Recommendations (Causal Counterfactual Analysis)</h2>
+        <p>Based on causal reasoning, the following interventions would have the greatest impact:</p>
+        {% for cf in counterfactuals %}
+        <div class="insight-card">
+            <strong>{{ cf['intervention'] if 'intervention' in cf else 'Intervention' }}</strong>
+            <div>{{ cf['recommendation'] if 'recommendation' in cf else '' }}</div>
+            <div class="effectiveness">Risk Reduction: {{ "%.0f"|format(cf.get('risk_reduction_pct', 0)) }}%</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if confounders %}
+    <div class="section">
+        <h2>7. Confounding Factors</h2>
+        <p>The following factors may inflate or deflate perceived risk:</p>
+        {% for conf in confounders %}
+        <div class="insight-card warning">
+            <strong>{{ conf['confounder_name'] if 'confounder_name' in conf else 'Factor' }}</strong>
+            <div>{{ conf['implication'] if 'implication' in conf else '' }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Footer -->
+    <div class="report-footer">
+        Generated by CausalTM v{{ version }} | Causal AI-driven STRIDE Threat Modeling
+    </div>
+
+</div>
+</body>
+</html>

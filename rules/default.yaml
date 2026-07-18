@@ -1,0 +1,306 @@
+# CausalTM - Default STRIDE Threat Rules
+# These rules encode security domain knowledge for automated threat identification.
+# Each rule defines a condition under which a specific STRIDE threat applies.
+
+rules:
+  # ──── SPOOFING ────────────────────────────────────────────────────────────
+
+  - id: STRIDE-S-001
+    category: Spoofing
+    title: "Public endpoint without authentication"
+    description: >
+      A process is exposed to external traffic but lacks authentication mechanisms.
+      An attacker could impersonate a legitimate user or service.
+    applies_to: [process]
+    condition:
+      element.is_public_facing: true
+      element.has_authentication: false
+    severity: High
+    confidence: 0.85
+    mitigations:
+      - "Implement authentication middleware (OAuth2, JWT, API keys)"
+      - "Add identity verification before processing requests"
+    cwe_ids: ["CWE-287", "CWE-306"]
+    attack_vector: "Network-accessible endpoint without identity verification"
+
+  - id: STRIDE-S-002
+    category: Spoofing
+    title: "External entity communicating without authentication"
+    description: >
+      An external entity sends data to the system without authentication on the flow.
+      The identity of the external entity cannot be verified.
+    applies_to: [external_entity]
+    condition:
+      flow.is_authenticated: false
+      flow.crosses_trust_boundary: true
+    severity: High
+    confidence: 0.8
+    mitigations:
+      - "Require authentication tokens on all inbound data flows"
+      - "Implement mutual TLS for service-to-service communication"
+    cwe_ids: ["CWE-290", "CWE-346"]
+
+  - id: STRIDE-S-003
+    category: Spoofing
+    title: "Service-to-service communication without mutual authentication"
+    description: >
+      Internal services communicate without verifying each other's identity.
+      A compromised service could impersonate another.
+    applies_to: [process]
+    condition:
+      flow.is_authenticated: false
+      flow.source_type: process
+      flow.target_type: process
+    severity: Medium
+    confidence: 0.6
+    mitigations:
+      - "Implement mutual TLS (mTLS) between services"
+      - "Use service mesh with identity verification"
+    cwe_ids: ["CWE-290"]
+
+  # ──── TAMPERING ───────────────────────────────────────────────────────────
+
+  - id: STRIDE-T-001
+    category: Tampering
+    title: "Data flow without encryption across trust boundary"
+    description: >
+      Data crosses a trust boundary without encryption. An attacker with
+      network access could modify data in transit (man-in-the-middle).
+    applies_to: [data_flow]
+    condition:
+      flow.crosses_trust_boundary: true
+      flow.is_encrypted: false
+    severity: Critical
+    confidence: 0.9
+    mitigations:
+      - "Enable TLS/SSL for all cross-boundary data flows"
+      - "Implement transport-layer encryption"
+      - "Use HTTPS instead of HTTP"
+    cwe_ids: ["CWE-319", "CWE-311"]
+    attack_vector: "Man-in-the-middle on unencrypted network traffic"
+
+  - id: STRIDE-T-002
+    category: Tampering
+    title: "Data store accessible without integrity verification"
+    description: >
+      A data store can be written to without integrity checks.
+      Stored data could be modified by unauthorized processes.
+    applies_to: [data_store]
+    condition:
+      element.has_authentication: false
+    severity: High
+    confidence: 0.75
+    mitigations:
+      - "Implement access controls on the data store"
+      - "Add data integrity checks (checksums, signatures)"
+      - "Enable audit logging for all write operations"
+    cwe_ids: ["CWE-345", "CWE-354"]
+
+  - id: STRIDE-T-003
+    category: Tampering
+    title: "Public-facing process handling sensitive data"
+    description: >
+      A public-facing process handles sensitive data types.
+      Input tampering could corrupt sensitive data.
+    applies_to: [process]
+    condition:
+      element.is_public_facing: true
+      flow.has_sensitive_data: true
+    severity: High
+    confidence: 0.8
+    mitigations:
+      - "Implement strict input validation and sanitization"
+      - "Use parameterized queries to prevent injection"
+      - "Apply allowlist-based input filtering"
+    cwe_ids: ["CWE-20", "CWE-89", "CWE-79"]
+
+  # ──── REPUDIATION ─────────────────────────────────────────────────────────
+
+  - id: STRIDE-R-001
+    category: Repudiation
+    title: "Process without audit logging"
+    description: >
+      A process performs actions without maintaining an audit trail.
+      Users or attackers could deny having performed actions.
+    applies_to: [process]
+    condition:
+      element.metadata.has_logging: "false"
+    severity: Medium
+    confidence: 0.6
+    mitigations:
+      - "Implement comprehensive audit logging"
+      - "Log all authentication events (success and failure)"
+      - "Log all data modification operations"
+      - "Use tamper-proof log storage"
+    cwe_ids: ["CWE-778"]
+
+  - id: STRIDE-R-002
+    category: Repudiation
+    title: "External entity actions without non-repudiation"
+    description: >
+      Actions from external entities are not cryptographically signed.
+      The entity could deny having sent specific requests.
+    applies_to: [external_entity]
+    condition:
+      flow.crosses_trust_boundary: true
+    severity: Low
+    confidence: 0.5
+    mitigations:
+      - "Implement request signing (HMAC, digital signatures)"
+      - "Maintain immutable audit logs with timestamps"
+      - "Use transaction IDs for traceability"
+    cwe_ids: ["CWE-778"]
+
+  # ──── INFORMATION DISCLOSURE ──────────────────────────────────────────────
+
+  - id: STRIDE-I-001
+    category: Information Disclosure
+    title: "Sensitive data transmitted without encryption"
+    description: >
+      Data classified as sensitive (PII, credentials, financial) is transmitted
+      without encryption. An attacker could intercept and read the data.
+    applies_to: [data_flow]
+    condition:
+      flow.has_sensitive_data: true
+      flow.is_encrypted: false
+    severity: Critical
+    confidence: 0.95
+    mitigations:
+      - "Encrypt all sensitive data in transit using TLS 1.2+"
+      - "Never transmit credentials or PII over unencrypted channels"
+      - "Implement end-to-end encryption for financial data"
+    cwe_ids: ["CWE-319", "CWE-311", "CWE-312"]
+    attack_vector: "Network sniffing to capture sensitive data in cleartext"
+
+  - id: STRIDE-I-002
+    category: Information Disclosure
+    title: "Data store containing sensitive data without encryption at rest"
+    description: >
+      A data store holds sensitive data but lacks encryption at rest indicators.
+      Unauthorized access to storage could expose sensitive information.
+    applies_to: [data_store]
+    condition:
+      element.has_encryption: false
+      flow.has_sensitive_data: true
+    severity: High
+    confidence: 0.7
+    mitigations:
+      - "Enable encryption at rest for the data store"
+      - "Use field-level encryption for PII and credentials"
+      - "Implement proper key management"
+    cwe_ids: ["CWE-312", "CWE-922"]
+
+  - id: STRIDE-I-003
+    category: Information Disclosure
+    title: "Public-facing process may expose internal details"
+    description: >
+      A public-facing process could leak internal system information
+      through error messages, headers, or debug output.
+    applies_to: [process]
+    condition:
+      element.is_public_facing: true
+    severity: Medium
+    confidence: 0.5
+    mitigations:
+      - "Implement generic error messages for external users"
+      - "Remove debug headers and stack traces in production"
+      - "Configure security headers (X-Content-Type-Options, etc.)"
+    cwe_ids: ["CWE-209", "CWE-200"]
+
+  # ──── DENIAL OF SERVICE ───────────────────────────────────────────────────
+
+  - id: STRIDE-D-001
+    category: Denial of Service
+    title: "Public-facing process without rate limiting"
+    description: >
+      A public-facing process accepts requests from the internet without
+      apparent rate limiting. It could be overwhelmed by excessive requests.
+    applies_to: [process]
+    condition:
+      element.is_public_facing: true
+    severity: Medium
+    confidence: 0.6
+    mitigations:
+      - "Implement rate limiting and throttling"
+      - "Add request size limits"
+      - "Use a WAF or API gateway with DDoS protection"
+      - "Implement circuit breakers for downstream dependencies"
+    cwe_ids: ["CWE-770", "CWE-400"]
+    attack_vector: "Volumetric attack flooding the endpoint"
+
+  - id: STRIDE-D-002
+    category: Denial of Service
+    title: "Single data store without redundancy"
+    description: >
+      A data store is a single point of failure. If it becomes
+      unavailable, dependent services will fail.
+    applies_to: [data_store]
+    condition:
+      always: true
+    severity: Low
+    confidence: 0.4
+    mitigations:
+      - "Implement database replication"
+      - "Add connection pooling and retry logic"
+      - "Use read replicas for read-heavy workloads"
+      - "Implement graceful degradation"
+    cwe_ids: ["CWE-400"]
+
+  # ──── ELEVATION OF PRIVILEGE ──────────────────────────────────────────────
+
+  - id: STRIDE-E-001
+    category: Elevation of Privilege
+    title: "Process with direct database access and public exposure"
+    description: >
+      A public-facing process has direct access to a data store.
+      Injection attacks could bypass application-level access controls
+      and access data beyond intended authorization.
+    applies_to: [process]
+    condition:
+      element.is_public_facing: true
+      flow.target_type: data_store
+    severity: High
+    confidence: 0.75
+    mitigations:
+      - "Implement least-privilege database access"
+      - "Use an ORM with parameterized queries"
+      - "Add application-level authorization checks"
+      - "Implement row-level security where possible"
+    cwe_ids: ["CWE-269", "CWE-89", "CWE-862"]
+    attack_vector: "SQL injection or parameter manipulation to access unauthorized data"
+
+  - id: STRIDE-E-002
+    category: Elevation of Privilege
+    title: "Cross-trust-boundary communication without authorization"
+    description: >
+      A data flow crosses a trust boundary without authorization checks.
+      An attacker who gains access to one zone could pivot to another.
+    applies_to: [data_flow]
+    condition:
+      flow.crosses_trust_boundary: true
+      flow.is_authenticated: false
+    severity: High
+    confidence: 0.8
+    mitigations:
+      - "Implement authorization checks at trust boundary crossings"
+      - "Use network segmentation and firewall rules"
+      - "Apply zero-trust principles"
+    cwe_ids: ["CWE-862", "CWE-269"]
+
+  - id: STRIDE-E-003
+    category: Elevation of Privilege
+    title: "External entity with access to internal services"
+    description: >
+      An external entity can reach internal services that may not
+      be designed for direct external access.
+    applies_to: [external_entity]
+    condition:
+      flow.target_trust_level: internal
+      flow.crosses_trust_boundary: true
+    severity: High
+    confidence: 0.7
+    mitigations:
+      - "Implement an API gateway or reverse proxy"
+      - "Restrict external access to designated entry points only"
+      - "Use network policies to enforce boundary controls"
+    cwe_ids: ["CWE-284", "CWE-269"]
