@@ -83,7 +83,7 @@ class GraphvizRenderer:
             pad="0.5",
             nodesep="0.8",
             ranksep="1.0",
-            splines="ortho",
+            splines="polyline",
             bgcolor="white",
         )
 

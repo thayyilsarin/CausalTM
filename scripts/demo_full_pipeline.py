@@ -268,8 +268,13 @@ def main():
     categories = {}
     severities = {}
     for t in threats:
-        cat = t.get("category", "Unknown")
-        sev = t.get("severity", "Unknown")
+        cat = str(t.get("category", "Unknown"))
+        sev = str(t.get("severity", "Unknown"))
+        # Clean enum representations: "StrideCategory.SPOOFING" → "Spoofing"
+        if "." in cat:
+            cat = cat.split(".")[-1].replace("_", " ").title()
+        if "." in sev:
+            sev = sev.split(".")[-1].replace("_", " ").title()
         categories[cat] = categories.get(cat, 0) + 1
         severities[sev] = severities.get(sev, 0) + 1
 
@@ -292,13 +297,27 @@ def main():
     diagram_dir = Path("data/diagrams")
     diagram_dir.mkdir(parents=True, exist_ok=True)
 
-    # Generate HTML report
+    # Try DFD rendering first (so we can embed SVG in report)
+    diagram_svg_content = None
+    try:
+        from src.renderer.graphviz_renderer import GraphvizRenderer
+        renderer = GraphvizRenderer()
+        svg_path = renderer.render(dfd_model, diagram_dir / "demo-dfd.svg", format="svg")
+        print(f"  DFD Diagram: {svg_path}")
+        # Read SVG for embedding in HTML report
+        svg_file = Path(str(svg_path))
+        if svg_file.exists():
+            diagram_svg_content = svg_file.read_text(encoding="utf-8")
+    except Exception as e:
+        print(f"  DFD Diagram: SKIPPED ({e})")
+
+    # Generate HTML report (with embedded DFD if available)
     reporter = ReportGenerator()
     report_content = reporter.generate_from_data(
         dfd_model=dfd_model,
         threats=threats,
         causal_result=causal_result,
-        diagram_svg=None,  # SVG would come from Graphviz renderer
+        diagram_svg=diagram_svg_content,
         project_name="OWASP Juice Shop",
         scan_id="demo-001",
         output_path=output_dir / "demo-report.html",
@@ -317,16 +336,6 @@ def main():
         format="markdown",
     )
     print(f"  Markdown Report: {output_dir / 'demo-report.md'}")
-
-    # Try DFD rendering (requires Graphviz binary installed)
-    try:
-        from src.renderer.graphviz_renderer import GraphvizRenderer
-        renderer = GraphvizRenderer()
-        svg_path = renderer.render(dfd_model, diagram_dir / "demo-dfd.svg", format="svg")
-        print(f"  DFD Diagram: {svg_path}")
-    except Exception as e:
-        print(f"  DFD Diagram: SKIPPED (Graphviz not installed: {e})")
-        print(f"  Install with: choco install graphviz  OR  download from https://graphviz.org/download/")
 
     # ──── Summary ────────────────────────────────────────────────────────
     print()
