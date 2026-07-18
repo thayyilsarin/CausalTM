@@ -173,12 +173,14 @@ class CausalGraphRenderer:
             layers = {"sast": [], "dast": [], "repo": []}
             for en_id, en in master_dag._edge_nodes.items():
                 # Only include edge nodes with actual values (skip empty layers)
-                if en.layer in layers and en.value > 0.001:
+                # But keep them in the REASONING model for counterfactuals
+                is_observed = en.metadata.get("observed", "True") == "True"
+                if en.layer in layers and (en.value > 0.001 or is_observed):
                     layers[en.layer].append(en)
 
             for layer_name, edge_nodes in layers.items():
                 if not edge_nodes:
-                    continue  # Skip entirely empty layers (e.g., DAST when no scan ran)
+                    continue  # Skip entirely empty layers in the VISUAL only
 
                 color = self.LAYER_COLORS.get(layer_name, "#3498db")
                 cluster_name = f"cluster_edge_{layer_name}"
@@ -195,17 +197,28 @@ class CausalGraphRenderer:
 
                     for en in edge_nodes:
                         # Label clearly shows: source + name + value
-                        label = f"[{en.layer.upper()}]\\n{en.name.replace(f'{en.layer.upper()} ', '')}\\n= {en.value:.2f}"
+                        is_observed = en.metadata.get("observed", "True") == "True"
+                        short_name = en.name.replace(f'{en.layer.upper()} ', '').replace('DAST ', '').replace('SAST ', '').replace('Architecture ', '')
+
+                        if is_observed and en.value > 0.001:
+                            label = f"[{en.layer.upper()}]\\n{short_name}\\n= {en.value:.2f}"
+                            style = "filled,bold"
+                            fillcolor = f"{color}15"
+                        else:
+                            label = f"[{en.layer.upper()}]\\n{short_name}\\n(not observed)"
+                            style = "filled,dashed"
+                            fillcolor = "#f5f5f5"
 
                         sub.node(
                             en.id,
                             label=label,
                             shape="ellipse",
-                            style="filled,bold",
-                            fillcolor=f"{color}15",
+                            style=style,
+                            fillcolor=fillcolor,
                             color=color,
-                            penwidth="2.5",
+                            penwidth="2.5" if is_observed else "1",
                             fontsize="8",
+                            fontcolor="#333333" if is_observed else "#999999",
                         )
 
             # Layer 2: Intermediate Nodes (Master's OWN reasoning)

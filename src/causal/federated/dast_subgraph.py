@@ -96,17 +96,26 @@ class DASTSubGraph(CausalSubGraph):
         """
         Compute edge nodes for the master DAG.
         
-        IMPORTANT: If no DAST findings exist, return EMPTY list.
-        Edge nodes should only be produced when the sub-graph has
-        actual data to reason about. Empty sub-graphs contribute nothing.
+        DESIGN PRINCIPLE: Edge nodes are ALWAYS produced, even when no findings exist.
+        This is essential for counterfactual reasoning — the Master DAG must be able
+        to ask "What if DAST DID find something?" even when DAST hasn't run yet.
+        
+        When no findings exist:
+        - Values are set to 0.0 (observed nothing)
+        - causal_strength is set to 0.0 (no influence on current risk)
+        - metadata marks them as "not_observed"
+        
+        This allows:
+        - Rendering to HIDE them (visual clarity)
+        - Reasoning to USE them (counterfactual completeness)
         """
-        # If no findings, this layer has nothing to contribute
-        if not self._findings:
-            self._edge_nodes = {}
-            return []
-
         edge_nodes = []
+        has_findings = bool(self._findings)
         total = max(len(self._findings), 1)
+
+        # When no findings: all values = 0, strength = 0 (no influence)
+        # When findings exist: compute normally
+        observed_strength_multiplier = 1.0 if has_findings else 0.0
 
         # 1. Confirmed Exploitable Ratio
         confirmed_count = len(self._confirmed_exploitable)
@@ -114,26 +123,27 @@ class DASTSubGraph(CausalSubGraph):
             id="dast.confirmed_exploitable",
             name="DAST Confirmed Exploitable Ratio",
             layer=self.layer_name,
-            value=self._normalize(confirmed_count, total),
-            causal_strength=0.95,  # Very high — runtime confirmation is strong evidence
+            value=self._normalize(confirmed_count, total) if has_findings else 0.0,
+            causal_strength=0.95 * observed_strength_multiplier,
             evidence=[
-                f"Confirmed exploitable: {confirmed_count}/{total}",
-                f"All DAST findings are runtime-verified",
+                f"Confirmed exploitable: {confirmed_count}/{total}" if has_findings else "DAST scan not performed",
             ],
-            metadata={"confirmed_count": str(confirmed_count)},
+            metadata={
+                "confirmed_count": str(confirmed_count),
+                "observed": str(has_findings),
+            },
         ))
 
         # 2. Attack Surface Size
         endpoint_count = len(self._urls_tested)
-        # Normalize against a "typical" attack surface (50 endpoints = 1.0)
         edge_nodes.append(EdgeNode(
             id="dast.attack_surface",
             name="DAST Attack Surface Size",
             layer=self.layer_name,
-            value=self._normalize(endpoint_count, 50),
-            causal_strength=0.6,
-            evidence=[f"Unique endpoints tested: {endpoint_count}"],
-            metadata={"endpoint_count": str(endpoint_count)},
+            value=self._normalize(endpoint_count, 50) if has_findings else 0.0,
+            causal_strength=0.6 * observed_strength_multiplier,
+            evidence=[f"Unique endpoints tested: {endpoint_count}" if has_findings else "DAST scan not performed"],
+            metadata={"endpoint_count": str(endpoint_count), "observed": str(has_findings)},
         ))
 
         # 3. Authentication Bypass Evidence
@@ -143,25 +153,26 @@ class DASTSubGraph(CausalSubGraph):
             id="dast.auth_bypass_evidence",
             name="DAST Authentication Bypass Evidence",
             layer=self.layer_name,
-            value=1.0 if has_auth_bypass else 0.0,
-            causal_strength=0.9 if has_auth_bypass else 0.3,
+            value=(1.0 if has_auth_bypass else 0.0) if has_findings else 0.0,
+            causal_strength=(0.9 if has_auth_bypass else 0.3) * observed_strength_multiplier,
             evidence=[
-                f"Auth-related findings: {auth_findings}",
-                "Authentication bypass CONFIRMED in runtime" if has_auth_bypass else "No auth bypass found",
+                (f"Auth-related findings: {auth_findings}" if has_findings else "DAST scan not performed"),
             ],
+            metadata={"observed": str(has_findings)},
         ))
 
         # 4. TLS Posture
         tls_issues = self._category_counts.get("cryptography", 0)
         config_issues = self._category_counts.get("configuration", 0)
-        tls_score = max(0.0, 1.0 - self._normalize(tls_issues + config_issues, 10))
+        tls_score = max(0.0, 1.0 - self._normalize(tls_issues + config_issues, 10)) if has_findings else 0.0
         edge_nodes.append(EdgeNode(
             id="dast.tls_posture",
             name="DAST TLS/Encryption Posture",
             layer=self.layer_name,
             value=tls_score,
-            causal_strength=0.7,
-            evidence=[f"TLS/config issues found: {tls_issues + config_issues}"],
+            causal_strength=0.7 * observed_strength_multiplier,
+            evidence=[f"TLS/config issues found: {tls_issues + config_issues}" if has_findings else "DAST scan not performed"],
+            metadata={"observed": str(has_findings)},
         ))
 
         # 5. Information Leakage
@@ -170,22 +181,24 @@ class DASTSubGraph(CausalSubGraph):
             id="dast.information_leakage",
             name="DAST Information Leakage",
             layer=self.layer_name,
-            value=self._normalize(info_findings, 10),
-            causal_strength=0.65,
-            evidence=[f"Information disclosure findings: {info_findings}"],
+            value=self._normalize(info_findings, 10) if has_findings else 0.0,
+            causal_strength=0.65 * observed_strength_multiplier,
+            evidence=[f"Information disclosure findings: {info_findings}" if has_findings else "DAST scan not performed"],
+            metadata={"observed": str(has_findings)},
         ))
 
         # 6. Severity Distribution Score
         critical = self._severity_counts.get("Critical", 0)
         high = self._severity_counts.get("High", 0)
-        severity_score = (critical * 1.0 + high * 0.7) / max(total, 1)
+        severity_score = ((critical * 1.0 + high * 0.7) / max(total, 1)) if has_findings else 0.0
         edge_nodes.append(EdgeNode(
             id="dast.severity_score",
             name="DAST Severity Score",
             layer=self.layer_name,
             value=min(1.0, severity_score),
-            causal_strength=0.85,
-            evidence=[f"Critical: {critical}, High: {high}, Total: {total}"],
+            causal_strength=0.85 * observed_strength_multiplier,
+            evidence=[f"Critical: {critical}, High: {high}, Total: {total}" if has_findings else "DAST scan not performed"],
+            metadata={"observed": str(has_findings)},
         ))
 
         self._edge_nodes = {en.id: en for en in edge_nodes}
