@@ -71,9 +71,14 @@ class CausalGraphRenderer:
                     f"No causal relationships found ({subgraph.graph.number_of_nodes()} nodes, 0 edges)")
 
             # Get edge node IDs for highlighting
+            # Support both v1 and v2
             edge_node_ids = set()
             if hasattr(subgraph, '_edge_nodes'):
                 edge_node_ids = set(subgraph._edge_nodes.keys())
+            # v2 edge nodes are also in the graph with node_type="edge_node"
+            for n_id, n_data in subgraph.graph.nodes(data=True):
+                if n_data.get("node_type") == "edge_node":
+                    edge_node_ids.add(n_id)
 
             dot = Digraph(
                 name="CausalSubGraph",
@@ -98,10 +103,20 @@ class CausalGraphRenderer:
             dot.attr("edge", fontname=self.FONT, fontsize="7")
 
             # Render only connected nodes
+            # Support both v1 (_nodes) and v2 (_base_variables) sub-DAGs
+            node_data = getattr(subgraph, '_nodes', None) or getattr(subgraph, '_base_variables', {})
+
             for node_id in connected_nodes:
-                if node_id not in subgraph._nodes:
-                    continue
-                attrs = subgraph._nodes[node_id]
+                if node_id not in node_data:
+                    # Check if it's an edge node (in the graph but not in _nodes/_base_variables)
+                    graph_attrs = subgraph.graph.nodes.get(node_id, {})
+                    if graph_attrs:
+                        attrs = graph_attrs
+                    else:
+                        continue
+                else:
+                    attrs = node_data[node_id]
+
                 is_edge_node = node_id in edge_node_ids
 
                 self._render_subgraph_node(dot, node_id, attrs, is_edge_node, subgraph.layer_name)
@@ -433,7 +448,9 @@ class CausalGraphRenderer:
 
     def _render_subgraph_node(self, dot, node_id, attrs, is_edge_node, layer_name):
         """Render a node in a sub-graph with edge node highlighting."""
-        node_type = attrs.get("node_type", "component")
+        if not isinstance(attrs, dict):
+            attrs = {}
+        node_type = attrs.get("node_type", "base_variable")
 
         # Determine shape based on type
         shape_map = {
@@ -496,7 +513,16 @@ class CausalGraphRenderer:
 
     def _build_subgraph_node_label(self, node_id, attrs):
         """Build a human-readable label for a sub-graph node."""
+        # Handle both dict attrs and graph node attrs
+        if not isinstance(attrs, dict):
+            attrs = {}
+
         node_type = attrs.get("node_type", "")
+
+        # v2 base variables have 'description' field
+        if attrs.get("description"):
+            desc = attrs["description"]
+            return desc[:35] if len(desc) > 35 else desc
 
         if node_type in ("vulnerability", "confirmed_vulnerability"):
             cwe = attrs.get("cwe", "")
@@ -529,6 +555,19 @@ class CausalGraphRenderer:
 
         if node_type == "coverage":
             return f"Coverage:\\n{attrs.get('coverage_type', 'unknown')}"
+
+        if node_type == "edge_node":
+            return node_id.replace(".", "\\n").replace("_", " ").title()
+
+        if node_type == "base_variable":
+            # v2 base variable
+            title = attrs.get("title", "")
+            cwe = attrs.get("cwe", "")
+            if cwe and title:
+                return f"{cwe}\\n{title[:25]}"
+            elif title:
+                return title[:30]
+            return node_id.split("_", 1)[-1][:25] if "_" in node_id else node_id[:25]
 
         # Default: clean up the ID
         clean = node_id.replace("_", " ").replace("-", " ")
