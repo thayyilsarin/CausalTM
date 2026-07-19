@@ -79,6 +79,7 @@ jobs:
         run: |
           echo "=== Starting OWASP ZAP Baseline Scan against http://localhost:3000 ==="
           mkdir -p data
+          chmod 777 data
           docker run --rm --network host \
             -v $(pwd)/data:/zap/wrk:rw \
             -t ghcr.io/zaproxy/zaproxy:stable \
