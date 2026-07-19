@@ -68,7 +68,7 @@ def parse_args():
 def detect_architecture(repo_path: Path) -> dict:
     """
     Auto-detect architecture from repository using all 6 detectors.
-    Then enrich the result to meet v2 engine requirements.
+    Note: v2 engine's _ensure_minimum_architecture() handles enrichment internally.
     """
     from src.analyzer.engine import AnalyzerEngine
 
@@ -80,147 +80,7 @@ def detect_architecture(repo_path: Path) -> dict:
     component_graph = loop.run_until_complete(engine.analyze(repo_path))
     loop.close()
 
-    # Enrich the auto-detected graph for v2 compatibility
-    component_graph = enrich_component_graph(component_graph)
-
     return component_graph
-
-
-def enrich_component_graph(graph: dict) -> dict:
-    """
-    Enrich auto-detected component graph with properties v2 needs.
-    
-    The auto-detection produces minimal metadata. v2 needs:
-    - is_public_facing properly set (at least one component should be public)
-    - has_authentication / has_encryption inferred from context
-    - data_sensitivity on flows (inferred from component types)
-    - crosses_trust_boundary on flows (inferred from component trust levels)
-    - At least one trust boundary defined
-    """
-    components = graph.get("components", [])
-    flows = graph.get("data_flows", [])
-    boundaries = graph.get("trust_boundaries", [])
-
-    # Filter out metadata-only components
-    real_components = [c for c in components if c.get("metadata", {}).get("type") != "metadata"]
-
-    # If no real components detected, create a minimal architecture from what we know
-    if not real_components:
-        real_components = [{
-            "id": "process-main-app",
-            "name": "Main Application",
-            "type": "process",
-            "is_public_facing": True,
-            "has_authentication": False,
-            "has_encryption": False,
-            "technology": "Unknown",
-            "ports": [],
-            "source_paths": [],
-            "metadata": {},
-            "trust_level": "internal",
-        }]
-
-    # Ensure at least one component is marked public-facing
-    has_public = any(c.get("is_public_facing") for c in real_components)
-    if not has_public:
-        # Mark the first process component as public (reasonable default for a web app)
-        for c in real_components:
-            if c.get("type") == "process":
-                c["is_public_facing"] = True
-                break
-
-    # Infer data sensitivity on flows
-    for flow in flows:
-        if not flow.get("data_sensitivity"):
-            # Infer from target type
-            target_id = flow.get("target_id", "")
-            target = next((c for c in real_components if c.get("id") == target_id), None)
-            if target and target.get("type") == "data_store":
-                flow["data_sensitivity"] = ["internal"]
-            # If source is external, flow carries credentials
-            source_id = flow.get("source_id", "")
-            source = next((c for c in real_components if c.get("id") == source_id), None)
-            if source and source.get("type") == "external_entity":
-                flow["data_sensitivity"] = ["credentials"]
-
-    # Ensure trust boundary exists
-    if not boundaries:
-        internal_ids = [c["id"] for c in real_components if c.get("type") in ("process", "data_store")]
-        external_ids = [c["id"] for c in real_components if c.get("type") == "external_entity"]
-
-        if internal_ids:
-            boundaries.append({
-                "id": "tb-internal",
-                "name": "Internal Network",
-                "trust_level": "internal",
-                "component_ids": internal_ids,
-            })
-        if external_ids:
-            boundaries.append({
-                "id": "tb-external",
-                "name": "External / Internet",
-                "trust_level": "external",
-                "component_ids": external_ids,
-            })
-
-    # Infer trust boundary crossings on flows
-    component_boundary = {}
-    for b in boundaries:
-        for cid in b.get("component_ids", []):
-            component_boundary[cid] = b.get("trust_level", "unknown")
-
-    for flow in flows:
-        source_level = component_boundary.get(flow.get("source_id"), "unknown")
-        target_level = component_boundary.get(flow.get("target_id"), "unknown")
-        if source_level != target_level and source_level != "unknown" and target_level != "unknown":
-            flow["crosses_trust_boundary"] = True
-
-    # If no flows exist at all, create basic flows between components
-    if not flows and len(real_components) > 1:
-        # Connect external entities to public-facing processes
-        externals = [c for c in real_components if c.get("type") == "external_entity"]
-        publics = [c for c in real_components if c.get("is_public_facing") and c.get("type") == "process"]
-        data_stores = [c for c in real_components if c.get("type") == "data_store"]
-        processes = [c for c in real_components if c.get("type") == "process"]
-
-        flow_id = 0
-        for ext in externals:
-            for pub in publics:
-                flow_id += 1
-                flows.append({
-                    "id": f"flow-inferred-{flow_id}",
-                    "source_id": ext["id"],
-                    "target_id": pub["id"],
-                    "protocol": "HTTPS",
-                    "is_encrypted": True,
-                    "is_authenticated": False,
-                    "crosses_trust_boundary": True,
-                    "data_types": ["user_requests"],
-                    "data_sensitivity": ["credentials"],
-                    "description": f"User traffic to {pub.get('name', '')}",
-                })
-
-        for proc in processes:
-            for ds in data_stores:
-                flow_id += 1
-                flows.append({
-                    "id": f"flow-inferred-{flow_id}",
-                    "source_id": proc["id"],
-                    "target_id": ds["id"],
-                    "protocol": "TCP",
-                    "is_encrypted": False,
-                    "is_authenticated": True,
-                    "crosses_trust_boundary": False,
-                    "data_types": ["application_data"],
-                    "data_sensitivity": ["internal"],
-                    "description": f"{proc.get('name', '')} queries {ds.get('name', '')}",
-                })
-
-    graph["components"] = real_components + [c for c in components if c.get("metadata", {}).get("type") == "metadata"]
-    graph["data_flows"] = flows
-    graph["trust_boundaries"] = boundaries
-
-    return graph
 
 
 def ingest_sast(sarif_path: Path) -> list[dict]:

@@ -151,10 +151,16 @@ class RepoSubDAG(ArchitecturalSubDAG):
             1 for f in cross_boundary_flows
             if f.get("is_encrypted") or f.get("is_authenticated")
         )
-        boundary_integrity = (
-            controlled_crossings / max(len(cross_boundary_flows), 1)
-            if cross_boundary_flows else 1.0  # No boundaries to cross = "fine"
-        )
+
+        # If no boundaries defined at all (sparse detection), posture should be LOW
+        # because we can't confirm boundaries exist
+        if not self._boundaries:
+            boundary_integrity = 0.3  # Unknown = assume weak
+        elif not cross_boundary_flows:
+            boundary_integrity = 0.7  # Boundaries exist but no flows cross them = partial
+        else:
+            boundary_integrity = controlled_crossings / len(cross_boundary_flows)
+
         uncontrolled_vars = [
             f"flow_{f['id']}" for f in cross_boundary_flows
             if not f.get("is_encrypted") and not f.get("is_authenticated")
@@ -213,12 +219,28 @@ class RepoSubDAG(ArchitecturalSubDAG):
             observed=True,
         ))
 
-        # Register edge nodes in graph
+        # Register edge nodes in graph AND connect base variables
         for en in edge_nodes:
             self.graph.add_node(en.id, node_type="edge_node")
             for var_id in en.base_variables:
                 if var_id in self._base_variables:
                     self._add_edge_node_connection(var_id, en.id, weight=0.7)
+
+        # Ensure ALL component base variables connect to at least one edge node
+        # (so the graph is never empty for the renderer)
+        for var_id, var_data in self._base_variables.items():
+            # Check if this base var is already connected
+            if self.graph.out_degree(var_id) == 0:
+                # Connect to the most relevant edge node
+                if var_data.get("is_public"):
+                    self._add_edge_node_connection(var_id, "repo.topology_exposure", weight=0.5)
+                elif var_data.get("type") == "data_store":
+                    self._add_edge_node_connection(var_id, "repo.data_sensitivity", weight=0.5)
+                elif var_data.get("crosses_boundary"):
+                    self._add_edge_node_connection(var_id, "repo.trust_boundary_integrity", weight=0.5)
+                else:
+                    # Default: connect to defense_depth
+                    self._add_edge_node_connection(var_id, "repo.defense_depth", weight=0.3)
 
         self._edge_nodes = {en.id: en for en in edge_nodes}
         return edge_nodes
