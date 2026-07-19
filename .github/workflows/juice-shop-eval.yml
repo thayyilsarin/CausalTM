@@ -81,7 +81,7 @@ jobs:
           mkdir -p data
           docker run --rm --network host \
             -v $(pwd)/data:/zap/wrk:rw \
-            -t owasp/zap2docker-stable \
+            -t ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py \
             -t http://localhost:3000 \
             -x /zap/wrk/juice-shop-zap-report.xml \
