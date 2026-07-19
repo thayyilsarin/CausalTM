@@ -570,6 +570,8 @@ def main():
     if master_svg_file.exists():
         master_dag_svg = master_svg_file.read_text(encoding="utf-8")
 
+    # Generate reports
+    reporter = ReportGenerator()
     reporter.generate_from_data(
         dfd_model=dfd_model,
         threats=threats,
