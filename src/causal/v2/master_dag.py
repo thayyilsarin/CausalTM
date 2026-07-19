@@ -195,6 +195,34 @@ class MasterDAGV2:
                     reason=rule.reason,
                 )
 
+        # Add STRIDE posture nodes (intermediate reasoning)
+        stride_categories = ["Spoofing", "Tampering", "Repudiation", "Information Disclosure", "Denial of Service", "Elevation of Privilege"]
+        for cat in stride_categories:
+            node_id = f"stride.{cat.lower().replace(' ', '_')}"
+            self.graph.add_node(node_id, node_type="stride_posture", category=cat)
+            self._base_variables[node_id] = {
+                "node_type": "stride_posture",
+                "name": f"STRIDE: {cat}",
+                "description": f"STRIDE: {cat} Posture",
+            }
+            # Connect relevant edge nodes to this STRIDE category
+            for en in all_edge_nodes:
+                if cat in en.stride_relevance:
+                    self.graph.add_edge(en.id, node_id, edge_type="determines", weight=en.causal_strength)
+
+        # Add final Overall Risk node
+        risk_node_id = "overall_risk"
+        self.graph.add_node(risk_node_id, node_type="final_effect")
+        self._base_variables[risk_node_id] = {
+            "node_type": "final_effect",
+            "name": "OVERALL RISK",
+            "description": "Overall Risk (final effect)",
+        }
+        # Connect STRIDE posture nodes to overall risk
+        for cat in stride_categories:
+            node_id = f"stride.{cat.lower().replace(' ', '_')}"
+            self.graph.add_edge(node_id, risk_node_id, edge_type="contributes_to", weight=0.5)
+
         logger.info(
             f"[Master DAG v2] Built with {len(self._edge_nodes)} edge nodes, "
             f"{self.graph.number_of_edges()} cross-layer edges"

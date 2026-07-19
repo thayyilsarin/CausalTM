@@ -421,7 +421,36 @@ def main():
     # ──── Step 4: Build DFD ──────────────────────────────────────────────
     print("[4/6] Building Data Flow Diagram...")
     dfd_builder = DFDBuilder()
-    # Use a simple causal_result dict for DFD builder compatibility
+
+    # Build counterfactuals from roadmap for the report template
+    counterfactuals_for_report = []
+    for step in roadmap:
+        counterfactuals_for_report.append({
+            "intervention": f"Fix {step['name']}",
+            "recommendation": (
+                f"Fix {step['name']} ({step['layer']} layer): "
+                f"improve from {step['current_value']:.0%} to {step['target_value']:.0%}. "
+                f"STRIDE improvement: {step['stride_improvement']:.3f}."
+                + (f" Cross-layer: {', '.join(e['reason'] for e in step.get('cross_layer_effects', []))}" if step.get('cross_layer_effects') else "")
+            ),
+            "risk_reduction_pct": step.get("stride_improvement", 0) * 100,
+        })
+
+    # Build attack paths from STRIDE threats for the report
+    attack_paths_for_report = []
+    for t in result.threat_model.threats:
+        attack_paths_for_report.append({
+            "path_names": [
+                "Architecture Gap",
+                f"{t.category} Threat",
+                t.title[:40],
+            ],
+            "score": 1.0 - t.stride_posture_score,
+            "crosses_trust_boundary": True,
+            "has_confirmed_steps": t.layers_confirming >= 2,
+        })
+
+    # Build causal_result_compat for DFD builder and report template
     causal_result_compat = {
         "overall_risk": result.overall_risk,
         "risk_rating": result.risk_rating,
@@ -430,10 +459,14 @@ def main():
         "confounder_adjustments": {},
         "high_risk_flows": [],
         "mediators": [],
-        "counterfactuals": [],
+        "counterfactuals": counterfactuals_for_report,
         "graph_stats": {},
         "threat_counts_by_element": {},
-        "causal_attack_graph": {"paths": [], "choke_points": [], "total_paths": 0},
+        "causal_attack_graph": {
+            "paths": attack_paths_for_report,
+            "choke_points": [],
+            "total_paths": len(attack_paths_for_report),
+        },
         "federated": {"layer_contributions": {}, "intermediate_scores": {}, "tactical_counterfactuals": []},
     }
     dfd_model = dfd_builder.build(component_graph, causal_result_compat)

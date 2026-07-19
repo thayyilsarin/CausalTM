@@ -468,6 +468,10 @@ class CausalGraphRenderer:
             "trust_boundary": "box3d",
             "coverage": "parallelogram",
             "exposure_evidence": "diamond",
+            "base_variable": "ellipse",
+            "edge_node": "doubleoctagon",
+            "stride_posture": "box",
+            "final_effect": "doubleoctagon",
         }
         shape = shape_map.get(node_type, "ellipse")
 
@@ -481,6 +485,10 @@ class CausalGraphRenderer:
             "cwe_category": "#e67e22",
             "root_cause": "#c0392b",
             "impact_potential": "#2c3e50",
+            "base_variable": "#7f8c8d",
+            "edge_node": "#3498db",
+            "stride_posture": "#9b59b6",
+            "final_effect": "#e74c3c",
         }
         color = color_map.get(node_type, "#7f8c8d")
 
