@@ -84,7 +84,7 @@ jobs:
             -t ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py \
             -t http://localhost:3000 \
-            -x /zap/wrk/juice-shop-zap-report.xml \
+            -x juice-shop-zap-report.xml \
             -I || true
           echo "=== DAST Scan Complete ==="
           if [ -f data/juice-shop-zap-report.xml ]; then
