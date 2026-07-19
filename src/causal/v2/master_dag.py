@@ -356,6 +356,7 @@ class MasterDAGV2:
         """
         roadmap = []
         current_state = {en_id: en.value for en_id, en in self._edge_nodes.items()}
+        fixed_nodes = set()  # Track what's already been fixed
         step_number = 0
 
         while True:
@@ -368,6 +369,10 @@ class MasterDAGV2:
             best_impact = 0
 
             for en_id, en in self._edge_nodes.items():
+                # Skip already-fixed nodes
+                if en_id in fixed_nodes:
+                    continue
+
                 current_val = current_state.get(en_id, en.value)
 
                 # Skip already-good postures and exposure metrics (where lower is better)
@@ -381,8 +386,20 @@ class MasterDAGV2:
                         continue
                     target = 1.0
 
+                # Temporarily update edge nodes to current_state for accurate what_if
+                original_values = {}
+                for eid, eval_val in current_state.items():
+                    if eid in self._edge_nodes:
+                        original_values[eid] = self._edge_nodes[eid].value
+                        self._edge_nodes[eid].value = eval_val
+
                 # Simulate fixing this one
                 result = self.what_if(en.layer, en_id, target, f"Fix {en.name}")
+
+                # Restore original values
+                for eid, orig_val in original_values.items():
+                    if eid in self._edge_nodes:
+                        self._edge_nodes[eid].value = orig_val
 
                 # Calculate total STRIDE improvement
                 stride_improvement = sum(
@@ -415,6 +432,7 @@ class MasterDAGV2:
 
             # Apply the fix to current state for next iteration
             current_state[best_fix["edge_node"]] = best_fix["target_value"]
+            fixed_nodes.add(best_fix["edge_node"])
             # Apply cross-layer effects
             for effect in best_fix["cross_layer_effects"]:
                 current_state[effect["affected_edge_node"]] = effect["new_value"]

@@ -91,11 +91,13 @@ class StrideLayerV2:
     """
 
     # Thresholds below which a threat is identified
+    # Lower thresholds = more sensitive (catches more threats)
+    # For deliberately vulnerable apps like Juice Shop, posture will be low
     THREAT_THRESHOLDS = {
         "critical": 0.3,   # Posture below 30% = Critical threat
         "high": 0.5,       # Posture below 50% = High threat
         "medium": 0.7,     # Posture below 70% = Medium threat
-        "low": 0.9,        # Posture below 90% = Low threat
+        "low": 0.85,       # Posture below 85% = Low threat (catches more)
     }
 
     def evaluate(self, master_result: MasterDAGResult, component_graph: dict) -> StrideThreatModelV2:
@@ -173,7 +175,7 @@ class StrideLayerV2:
         """Can identity be forged? Is authentication adequate?"""
         threats = []
 
-        if posture < self.THREAT_THRESHOLDS["high"]:
+        if posture < self.THREAT_THRESHOLDS["low"]:
             severity = self._posture_to_severity(posture)
 
             # Determine specific spoofing issues from posture scores
@@ -215,7 +217,7 @@ class StrideLayerV2:
         """Can data be modified in transit or at rest?"""
         threats = []
 
-        if posture < self.THREAT_THRESHOLDS["high"]:
+        if posture < self.THREAT_THRESHOLDS["low"]:
             severity = self._posture_to_severity(posture)
 
             crypto_code = scores.get("sast.crypto_posture", 1.0)
@@ -258,7 +260,7 @@ class StrideLayerV2:
         """Can actions be denied? Is there audit trail?"""
         threats = []
 
-        if posture < self.THREAT_THRESHOLDS["medium"]:
+        if posture < self.THREAT_THRESHOLDS["low"]:
             severity = self._posture_to_severity(posture)
             logging_posture = scores.get("sast.logging_posture", 1.0)
 
@@ -288,7 +290,7 @@ class StrideLayerV2:
         """Can sensitive data be exposed to unauthorized parties?"""
         threats = []
 
-        if posture < self.THREAT_THRESHOLDS["high"]:
+        if posture < self.THREAT_THRESHOLDS["low"]:
             severity = self._posture_to_severity(posture)
 
             crypto = scores.get("sast.crypto_posture", 1.0)
@@ -332,7 +334,7 @@ class StrideLayerV2:
         """Can the service be made unavailable?"""
         threats = []
 
-        if posture < self.THREAT_THRESHOLDS["medium"]:
+        if posture < self.THREAT_THRESHOLDS["low"]:
             severity = self._posture_to_severity(posture)
 
             exposure = scores.get("repo.topology_exposure", 0.0)
@@ -365,7 +367,7 @@ class StrideLayerV2:
         """Can attacker gain higher access than intended?"""
         threats = []
 
-        if posture < self.THREAT_THRESHOLDS["high"]:
+        if posture < self.THREAT_THRESHOLDS["low"]:
             severity = self._posture_to_severity(posture)
 
             auth_code = scores.get("sast.auth_posture", 1.0)

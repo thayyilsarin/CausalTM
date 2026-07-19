@@ -474,6 +474,23 @@ def main():
     # Convert v2 threats to the format the report generator expects
     threats = []
     for t in result.threat_model.threats:
+        # Collect CWE IDs from base variables that contributed to this threat
+        threat_cwes = set()
+        for posture_id, posture_val in t.posture_indicators.items():
+            # Find base variables from the relevant sub-DAG
+            if "auth" in posture_id:
+                for var_id, var_data in engine.sast_subdag._base_variables.items():
+                    if var_data.get("posture_type") == "auth" and var_data.get("cwe"):
+                        threat_cwes.add(var_data["cwe"])
+            elif "crypto" in posture_id or "encryption" in posture_id:
+                for var_id, var_data in engine.sast_subdag._base_variables.items():
+                    if var_data.get("posture_type") == "crypto" and var_data.get("cwe"):
+                        threat_cwes.add(var_data["cwe"])
+            elif "validation" in posture_id:
+                for var_id, var_data in engine.sast_subdag._base_variables.items():
+                    if var_data.get("posture_type") == "validation" and var_data.get("cwe"):
+                        threat_cwes.add(var_data["cwe"])
+
         threats.append({
             "id": t.id,
             "category": t.category,
@@ -486,7 +503,7 @@ def main():
             "element_type": "architecture",
             "source": "STRIDE v2 (Cream Layer)",
             "mitigations": [t.remediation_architecture, t.remediation_code, t.remediation_verification],
-            "cwe_ids": [],
+            "cwe_ids": sorted(threat_cwes),
             "evidence": t.evidence_sast + t.evidence_dast + t.evidence_repo,
             "is_confirmed": t.layers_confirming >= 2,
             "causal_severity_score": t.stride_posture_score,
