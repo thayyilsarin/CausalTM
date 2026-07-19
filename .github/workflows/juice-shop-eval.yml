@@ -1,7 +1,7 @@
 name: Juice Shop Evaluation (Full — SAST + DAST + Architecture)
 
 on:
-  workflow_dispatch:  # Manual trigger
+  workflow_dispatch:
   push:
     paths:
       - 'scripts/eval_juice_shop.py'
@@ -15,19 +15,7 @@ jobs:
   evaluate:
     name: Full Evaluation (SAST + DAST + Architecture)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-
-    services:
-      juice-shop:
-        image: bkimminich/juice-shop
-        ports:
-          - 3000:3000
-        options: >-
-          --health-cmd "curl -f http://localhost:3000 || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-          --health-start-period 30s
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
@@ -44,6 +32,28 @@ jobs:
         run: |
           pip install networkx pydantic pyyaml jinja2 fastapi uvicorn gitpython lxml graphviz httpx python-multipart
           pip install semgrep
+
+      # ──── START JUICE SHOP (manual Docker, not services block) ──────────
+      - name: Start Juice Shop container
+        run: |
+          echo "Starting Juice Shop..."
+          docker run -d --name juice-shop -p 3000:3000 bkimminich/juice-shop
+          echo "Container started, waiting for it to become healthy..."
+
+      - name: Wait for Juice Shop to be ready
+        run: |
+          echo "Waiting for Juice Shop at http://localhost:3000..."
+          for i in $(seq 1 60); do
+            if curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 2>/dev/null | grep -q "200"; then
+              echo "Juice Shop is ready! (attempt $i)"
+              exit 0
+            fi
+            echo "  Attempt $i/60 — not ready yet..."
+            sleep 5
+          done
+          echo "ERROR: Juice Shop did not start within 5 minutes"
+          docker logs juice-shop | tail -30
+          exit 1
 
       # ──── INPUT 1: Source Code (Architecture Detection) ────────────────
       - name: Clone OWASP Juice Shop source
@@ -65,34 +75,22 @@ jobs:
           "
 
       # ──── INPUT 3: DAST (OWASP ZAP → XML) ─────────────────────────────
-      - name: Wait for Juice Shop to be ready
-        run: |
-          echo "Waiting for Juice Shop at http://localhost:3000..."
-          for i in $(seq 1 30); do
-            if curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 | grep -q "200"; then
-              echo "Juice Shop is ready!"
-              break
-            fi
-            echo "  Attempt $i/30 — waiting..."
-            sleep 5
-          done
-          # Final check
-          curl -s http://localhost:3000 | head -5
-
       - name: Run OWASP ZAP DAST scan
         run: |
-          echo "=== Starting OWASP ZAP Baseline Scan ==="
+          echo "=== Starting OWASP ZAP Baseline Scan against http://localhost:3000 ==="
+          mkdir -p data
           docker run --rm --network host \
             -v $(pwd)/data:/zap/wrk:rw \
-            owasp/zap2docker-stable:latest \
+            -t owasp/zap2docker-stable \
             zap-baseline.py \
             -t http://localhost:3000 \
             -x /zap/wrk/juice-shop-zap-report.xml \
             -I || true
           echo "=== DAST Scan Complete ==="
-          ls -la data/juice-shop-zap-report.xml || echo "ZAP report not found"
-          # Show summary
-          python3 -c "
+          if [ -f data/juice-shop-zap-report.xml ]; then
+            echo "ZAP report generated successfully"
+            ls -la data/juice-shop-zap-report.xml
+            python3 -c "
           import xml.etree.ElementTree as ET
           try:
               tree = ET.parse('data/juice-shop-zap-report.xml')
@@ -106,11 +104,19 @@ jobs:
                   print(f'  [{risk_map.get(risk, risk)}] {name}')
           except Exception as e:
               print(f'Could not parse ZAP report: {e}')
-          " || true
+          "
+          else
+            echo "WARNING: ZAP report not generated"
+          fi
 
       # ──── RUN CAUSALTM (All 3 inputs) ──────────────────────────────────
       - name: Run CausalTM full evaluation
         run: python scripts/eval_juice_shop.py
+
+      # ──── CLEANUP ───────────────────────────────────────────────────────
+      - name: Stop Juice Shop
+        if: always()
+        run: docker stop juice-shop || true
 
       # ──── UPLOAD ARTIFACTS ──────────────────────────────────────────────
       - name: Upload evaluation results
