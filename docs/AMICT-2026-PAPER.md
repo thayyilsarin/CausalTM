@@ -7,9 +7,9 @@ Rushford Business School
 
 ## Abstract
 
-Threat modeling is widely acknowledged as essential for proactive security, yet the manual effort it demands has rendered it impractical for organisations operating at modern delivery speeds. This paper introduces CausalTM, a framework that replaces manual threat analysis with a Federated Structural Causal Model (FSCM). The system ingests static analysis scan reports, source code repositories, and optionally dynamic analysis findings, then reasons about threats using three independent causal sub-graphs — one per data source — whose aggregated outputs feed a master directed acyclic graph for cross-layer inference. Unlike correlation-based machine learning, the approach requires no historical training data and supports interventional reasoning: it can answer questions of the form "if we apply mitigation X, by what proportion does risk decrease?" We evaluate the prototype against OWASP Juice Shop, a deliberately vulnerable web application with over one hundred documented security challenges. The system identifies eighteen STRIDE threats across all six categories, enumerates fifty causal attack paths, and produces quantified counterfactual recommendations — determining, for instance, that remediating critical static analysis findings would reduce overall risk by approximately thirty per cent. These results suggest that federated causal reasoning offers a viable path toward scalable, evidence-based threat modeling that traditional tools and machine learning classifiers cannot provide.
+Threat modeling remains largely manual despite the availability of rich automated security data. This paper introduces CausalTM, a framework that automates STRIDE-based architectural threat modeling through a five-layer Federated Structural Causal Model. Three domain-specific causal sub-graphs extract security posture from static analysis reports, dynamic analysis findings, and repository architecture respectively. Each sub-graph computes severity-weighted posture scores representing the state of security controls rather than counting vulnerabilities. These posture scores feed a master directed acyclic graph that applies cross-layer dependency rules and supports bidirectional propagation — predicting both the impact of a fix and what must be fixed to achieve a target posture. A STRIDE evaluation layer sits above the master DAG, identifying architectural threats from posture gaps without requiring any specific vulnerability to exist. We evaluate the prototype against OWASP Juice Shop using real Semgrep static analysis (23 findings) and real OWASP ZAP dynamic analysis (10 findings). The system identifies threats across all six STRIDE categories, computes a severity-weighted overall risk of 0.462, and generates a sequenced remediation roadmap of 11 steps toward zero risk — each step accounting for cross-layer side effects. These results demonstrate that posture-based causal reasoning produces actionable architectural threat intelligence that vulnerability-centric tools and correlation-based machine learning cannot provide.
 
-**Keywords:** causal inference, STRIDE, federated structural causal model, threat modeling, cybersecurity, counterfactual analysis, software security, OWASP Juice Shop
+**Keywords:** causal inference, STRIDE, federated structural causal model, threat modeling, cybersecurity, architectural security posture, counterfactual analysis, OWASP Juice Shop
 
 ---
 
@@ -17,20 +17,26 @@ Threat modeling is widely acknowledged as essential for proactive security, yet 
 
 Software teams that deploy changes several times a day cannot wait weeks for a threat model. The economics are prohibitive: industry estimates place the cost of a single manual threat modeling exercise between fifteen and fifty thousand US dollars, requiring specialised expertise that most organisations lack in sufficient quantity [1]. Meanwhile, the consequences of forgoing the practice are well documented — the average data breach now costs USD 4.88 million and takes 277 days to identify and contain [2].
 
-The STRIDE framework, developed at Microsoft in 1999, remains the prevailing method for classifying application-level threats [3]. Its strength lies in systematic coverage: by examining each element of a Data Flow Diagram against six threat categories — Spoofing, Tampering, Repudiation, Information Disclosure, Denial of Service, and Elevation of Privilege — an analyst can achieve reasonable completeness. The weakness, however, is that both the diagram construction and the threat analysis remain human-driven activities [4]. Attempts to automate portions of the process, such as PyTM and Microsoft's Threat Modeling Tool, still require a person to describe the system before analysis can begin [5].
+The STRIDE framework, developed at Microsoft in 1999, remains the prevailing method for classifying application-level threats [3]. Its strength lies in its focus on architectural design: by examining system topology, data flows, and trust boundaries against six threat categories — Spoofing, Tampering, Repudiation, Information Disclosure, Denial of Service, and Elevation of Privilege — an analyst identifies threats that exist by design, regardless of whether any specific vulnerability has been discovered yet [4]. The weakness is that both the diagram construction and the threat analysis remain human-driven activities [5].
 
-At the same time, modern development pipelines produce considerable security intelligence automatically. Static analysis tools report code-level weaknesses tied to specific files and lines. Dynamic analysis tools confirm exploitability against running applications. Container manifests, API specifications, and environment configurations document system architecture in machine-readable form. The gap is not in the availability of data but in the absence of a reasoning layer capable of synthesising these sources into a coherent, actionable threat model.
+Modern development pipelines produce considerable security intelligence automatically. Static analysis tools report code-level weaknesses. Dynamic analysis tools confirm exploitability against running applications. Container manifests, API specifications, and environment configurations document system architecture in machine-readable form. The gap is not in data availability but in the absence of a reasoning layer that can synthesise these sources into an architectural understanding suitable for STRIDE analysis.
 
-Machine learning has been proposed for vulnerability prioritisation [6], but these approaches suffer from three structural limitations. First, they require large labelled datasets that most organisations have not accumulated. Second, they cannot answer interventional questions — "what changes if we fix this?" — because statistical associations do not support causal claims [7]. Third, they degrade over time as threat landscapes shift [8].
+Machine learning has been proposed for vulnerability prioritisation [6], but these approaches count and rank vulnerabilities rather than reasoning about architecture. They cannot answer the question a STRIDE analysis actually asks: "Given this design, what can go wrong?" — a question about structure, not about individual bugs. They also require historical data [7], cannot answer interventional questions [8], and degrade as patterns shift [9].
 
-This paper proposes an alternative grounded in causal inference. We introduce a Federated Structural Causal Model (FSCM) that decomposes the threat reasoning problem into three domain-specific causal sub-graphs, each handling a distinct data source. These sub-graphs produce normalised summary variables — termed edge nodes — that feed into a master DAG responsible for cross-layer reasoning. The architecture supports two levels of counterfactual analysis: tactical interventions within a single layer and strategic interventions that span multiple layers. A separate causal attack graph module composes concrete attacker-movement paths by stitching together topology, vulnerability, and confirmation evidence from all three sub-graphs.
+This paper proposes a fundamentally different approach. Rather than counting vulnerabilities, we extract architectural security posture from each data source. Rather than applying rules to individual components, we evaluate the complete architecture against STRIDE as a holistic assessment. Rather than producing a flat threat list, we generate a sequenced remediation roadmap that accounts for cross-layer side effects. The framework, termed CausalTM, employs a five-layer Federated Structural Causal Model:
+
+1. Input sources (SAST reports, DAST reports, source repository) are consumed by ingestors.
+2. Three domain-specific sub-DAGs extract security posture (not vulnerability counts) as severity-weighted scores.
+3. A master DAG combines posture scores with cross-layer dependency rules and supports bidirectional propagation.
+4. A STRIDE evaluation layer identifies architectural threats from posture gaps across all six categories.
+5. A remediation roadmap sequences fixes for maximum cross-layer impact toward zero risk.
 
 The contributions of this work are fourfold:
 
-1. A federated causal architecture in which independent sub-graphs reason within their domain and compose through a stable interface contract, enabling modularity and drift isolation.
-2. Multi-level counterfactual analysis that produces quantified mitigation guidance rather than ordinal severity labels.
-3. A concrete causal attack graph that traces attacker movement at the component level, scored by exploitability, path length, trust boundary crossings, and runtime confirmation.
-4. A prototype evaluation against OWASP Juice Shop [9] demonstrating that the approach identifies known vulnerability chains and produces actionable recommendations within seconds.
+1. A posture-based causal architecture where sub-graphs compute severity-weighted security posture (authentication, encryption, validation, logging) rather than counting vulnerabilities — making threat identification independent of specific findings.
+2. Cross-layer dependency rules that predict how fixing an issue in one layer (code, runtime, architecture) affects posture in other layers.
+3. A STRIDE evaluation layer that sits above the causal model and identifies architectural threats from posture gaps with multi-layer evidence and automated CWE tracing.
+4. A prototype evaluation against OWASP Juice Shop with real SAST and DAST data demonstrating posture-based threat identification and sequenced remediation planning.
 
 ---
 
@@ -38,76 +44,85 @@ The contributions of this work are fourfold:
 
 ### A. Automated Threat Modeling
 
-Tools such as Microsoft's Threat Modeling Tool, OWASP Threat Dragon, and PyTM [10] reduce the mechanical burden of threat enumeration once a system model exists. However, every tool in this category requires a human analyst to construct the model manually. No existing tool extracts architecture directly from source code repositories or deployment configurations [5]. Tuma et al. [4] confirm in their systematic literature review that this architecture extraction step remains the principal unsolved bottleneck in threat modeling automation.
+Tools such as Microsoft's Threat Modeling Tool, OWASP Threat Dragon, and PyTM [10] reduce the mechanical burden of threat enumeration once a system model exists. However, every tool in this category requires a human analyst to construct the model manually. No existing tool extracts architecture directly from source code repositories or deployment configurations [5]. Tuma et al. [4] confirm in their systematic literature review that this architecture extraction step remains the principal unsolved bottleneck.
 
 ### B. Vulnerability Prioritisation via Machine Learning
 
-The Exploit Prediction Scoring System (EPSS) applies logistic regression to historical exploitation data [6]. Other researchers have employed random forests, gradient boosting, and deep learning for severity prediction [11]. These systems rank vulnerabilities by likelihood of exploitation, but they operate purely at the associational level. They cannot answer causal queries, they require substantial training data, and they deteriorate as attack patterns evolve — a phenomenon documented extensively under the heading of concept drift in security machine learning [8].
+The Exploit Prediction Scoring System (EPSS) applies logistic regression to historical exploitation data [6]. Other researchers have employed random forests and deep learning for severity prediction [11]. These systems rank vulnerabilities by exploitation likelihood, but they operate at the associational level. They cannot perform the architectural reasoning that STRIDE requires — asking whether a design permits spoofing, regardless of whether any spoofing vulnerability has been found yet.
 
 ### C. Causal Inference in Cybersecurity
 
-Pearl's framework for causal reasoning [7] distinguishes three levels of inference: associational (what patterns appear together?), interventional (what happens if we change something?), and counterfactual (what would have happened had we acted differently?). Recent work applies causal methods to intrusion detection [12] and incident root cause analysis [13], but no published research applies causal inference to application-level threat modeling. The present work fills this gap.
+Pearl's framework [8] distinguishes three levels of inference: associational, interventional, and counterfactual. Recent work applies causal methods to intrusion detection [12] and incident root cause analysis [13], but no published research applies causal inference to application-level threat modeling. The present work fills this gap by using causal sub-graphs to represent architectural posture and a master DAG for cross-layer interventional reasoning.
 
 ### D. Modular and Composable Causal Models
 
-Scholkopf et al. [14] argue that independent causal mechanisms can be combined without mutual interference — a property they term the Independent Causal Mechanisms principle. This theoretical result supports our federated architecture, in which sub-graphs representing static analysis, dynamic analysis, and architectural structure operate independently and compose through a defined interface.
-
-### E. Attack Graphs
-
-Network-level attack graphs (MulVAL [15], TVA) have been studied extensively since the early 2000s, but they reason about infrastructure topology rather than application architecture. Our causal attack graph operates at the application level and incorporates evidence from multiple scanning sources to score path confidence.
+Scholkopf et al. [14] argue that independent causal mechanisms can be combined without mutual interference. This theoretical result supports our federated architecture. However, we extend beyond full independence by introducing cross-layer dependency rules — acknowledging that in security, fixing code may affect what is observable at runtime, violating strict mechanism independence in a predictable, modelable way.
 
 ---
 
 ## III. Proposed Architecture
 
-### A. Overview
+### A. Design Philosophy: Posture, Not Vulnerability Counts
 
-The Federated Structural Causal Model consists of four principal components arranged in a hierarchical composition (Fig. 1):
+Traditional security tools count vulnerabilities: "you have 23 findings." CausalTM instead asks: "what is the state of your security controls?" A system with 23 low-severity findings in well-defended areas may be safer than one with 3 critical findings at unprotected trust boundaries. By computing posture — the degree to which security controls are implemented and effective — we align the analysis with what STRIDE actually evaluates: architectural adequacy.
 
-1. Three domain-specific causal sub-graphs (SAST, DAST, Repository)
-2. A master DAG that receives aggregated edge nodes and performs cross-layer reasoning
-3. A causal attack graph that composes concrete attacker-movement paths
-4. A STRIDE rule engine that classifies DFD elements against the six threat categories
+### B. Sub-DAGs: Extracting Posture from Each Source
 
-Each sub-graph operates on its own data source, constructs an internal causal graph, and distills its analysis into a small set of normalised edge nodes (six to seven per sub-graph, nineteen total). The master DAG is therefore a compact graph of approximately thirty nodes regardless of how many raw findings exist — a design choice that ensures scalability.
+Each sub-DAG produces four severity-weighted posture scores (edge nodes) representing the effect of base variables (individual findings) on architectural security state.
 
-### B. Domain-Specific Sub-Graphs
+**SAST Sub-DAG** answers: "What security controls exist in the code?"
 
-The SAST sub-graph ingests findings from static analysis tools (in SARIF format) and reasons about code-level vulnerability patterns. It identifies shared root causes across multiple findings, computes authentication and cryptographic coverage metrics, and produces edge nodes capturing vulnerability density, injection risk, and affected component ratio.
+Findings are classified by CWE into four posture categories (authentication, cryptography, input validation, audit logging). When CWE identifiers are unavailable — common with pattern-based tools like Semgrep — the system classifies findings by keyword analysis of rule titles. Posture is computed using severity-weighted deficit:
 
-The DAST sub-graph ingests findings from dynamic analysis tools (in ZAP XML or Netsparker format) and reasons about runtime-confirmed exploitability. Because dynamic findings are proven in execution rather than inferred from code patterns, the sub-graph assigns them a higher causal strength (0.95 versus 0.60-0.80 for static findings).
+*posture = max(0, 1.0 - (Σ severity_weight_i / calibration))*
 
-The repository sub-graph analyses the actual system architecture by parsing Docker Compose files, Kubernetes manifests, API specifications, environment configurations, and dependency manifests. It computes structural risk factors including public exposure ratio, trust boundary crossing density, data sensitivity, dependency chain depth, defense-in-depth indicators, and single-point-of-failure risk.
+where severity weights are Critical=1.0, High=0.7, Medium=0.4, Low=0.2, and calibration is set to 3.0 (three Critical findings bring posture to zero). This makes the calculation defensible: a single Critical authentication bypass reduces posture more than three Medium informational findings combined.
 
-### C. Edge Node Interface
+**DAST Sub-DAG** answers: "Are controls actually enforced at runtime?"
 
-The edge node serves as the contract between sub-graphs and the master DAG. Each edge node is a normalised floating-point value between zero and one, accompanied by a causal strength weight and supporting evidence. This interface ensures that sub-graphs can be modified, replaced, or extended without affecting the master DAG or other sub-graphs — a property critical for maintaining the system as tools and data sources evolve.
+DAST findings carry higher causal strength (0.85-0.9) than SAST because they represent proven runtime behaviour. When DAST has not been performed, edge nodes exist with zero values and zero causal strength — preserving the graph structure for counterfactual queries while contributing nothing to current risk.
 
-### D. Master DAG
+**Repo Sub-DAG** answers: "What is the structural design?"
 
-The master DAG receives nineteen edge nodes and computes five intermediate causal variables: Exploitability (how readily can vulnerabilities be exploited?), Exposure (how accessible is the system externally?), Impact Severity (how damaging would a successful attack be?), Blast Radius (how far would compromise propagate?), and Mitigation Posture (how well is the system defended?). Overall risk is computed as a weighted combination of the first three, reduced by the mitigation factor:
+Architecture is extracted from Docker manifests, Kubernetes configurations, API specifications, and environment files. Posture scores capture topology exposure, data sensitivity, trust boundary integrity, and defense-in-depth — properties that exist independent of any vulnerability.
 
-*Risk = (0.4 * Exploitability + 0.3 * Exposure + 0.3 * Impact) * (1 - 0.4 * Mitigation)*
+### C. Master DAG: Cross-Layer Reasoning
 
-The master DAG also performs strategic counterfactual analysis by setting edge nodes to alternative values and observing the change in overall risk.
+The master DAG receives 12 edge nodes (4 per sub-DAG), adds 6 STRIDE posture intermediate nodes and 1 overall risk node, and connects them via cross-layer dependency rules.
 
-### E. Causal Attack Graph
+Six dependency rules capture how interventions in one layer predict effects in others:
 
-Where the master DAG reasons abstractly about risk factors, the causal attack graph reasons concretely about attacker movement. It composes information from all three sub-graphs: the repository sub-graph provides topology (what connects to what), the SAST sub-graph identifies exploitable steps (which components carry vulnerabilities), and the DAST sub-graph confirms reachable entry points (what has been proven accessible from outside).
+| Trigger | Effect | Strength |
+|---------|--------|----------|
+| Code auth improves | Runtime auth improves | 0.7 |
+| Code crypto improves | Runtime encryption improves | 0.6 |
+| Code validation improves | Attack surface decreases | 0.5 |
+| Architecture adds defense | Attack surface decreases | 0.6 |
+| Topology exposure decreases | Attack surface decreases | 0.8 |
+| Boundary integrity improves | Information leakage decreases | 0.5 |
 
-Paths are enumerated from an external attacker entry node through components, vulnerabilities, and pivots to impact nodes. Each path is scored based on cumulative edge weights, normalised by length, with bonuses for trust boundary crossings and DAST-confirmed steps. Components appearing on the greatest number of paths are flagged as critical choke points — the highest-leverage intervention targets.
+These rules enable the system to predict: "If you fix input validation in code (SAST layer), the attack surface at runtime (DAST layer) will also decrease — you get two improvements from one fix."
 
-### F. Cross-Layer Confounder Detection
+### D. STRIDE Layer: The Cream
 
-The master DAG identifies confounders that span multiple layers. For example, internet exposure (a repository-layer variable) confounds the apparent relationship between SAST vulnerability count and breach likelihood: exposed systems tend to be scanned more thoroughly (yielding more findings) and are simultaneously more likely to be attacked. Without accounting for this confounder, an organisation might overinvest in fixing vulnerabilities on well-scanned but unexposed internal systems while neglecting less-scanned but directly reachable services.
+STRIDE sits above the master DAG and evaluates posture scores against threshold criteria for each category. A threat is generated when posture falls below the threshold (0.85 for Low severity, 0.7 for Medium, 0.5 for High, 0.3 for Critical). Each threat carries:
+
+- Multi-layer evidence (what SAST, DAST, and Repo each contribute)
+- Corroboration count (how many layers agree the threat exists)
+- Traced CWE identifiers (automatically mapped from base variables)
+- Three-level remediation (architecture fix, code fix, runtime verification)
+
+### E. Remediation Roadmap
+
+The system iteratively identifies the single fix with the highest cross-layer impact, applies it (including propagated effects), marks it as done, and repeats until no further meaningful improvement is achievable. This produces a sequenced roadmap where each step builds on the previous — accounting for the reality that fixing one thing changes the landscape for everything else.
 
 ---
 
 ## IV. Implementation
 
-The prototype is implemented in Python 3.11. NetworkX provides directed graph operations for all causal sub-graphs and path enumeration algorithms. Pydantic v2 enforces type-safe data schemas throughout the pipeline. The architecture detection layer consists of six specialised detectors operating on repository files: Docker/Compose, Kubernetes, OpenAPI/Swagger, environment configuration, dependency manifests, and source code patterns. SAST findings are ingested via a SARIF v2.1.0 parser compatible with Semgrep, CodeQL, Coverity, and Bandit. DAST findings are ingested via parsers for OWASP ZAP XML and Netsparker XML formats. Data Flow Diagrams are rendered using Graphviz, and threat reports are produced through Jinja2 templates in HTML and Markdown formats.
+The prototype is implemented in Python 3.11 using NetworkX for graph operations, Pydantic v2 for data schemas, and Graphviz for diagram rendering. SAST findings are ingested via a SARIF v2.1.0 parser compatible with Semgrep, CodeQL, Coverity, and Bandit. DAST findings are ingested via parsers for OWASP ZAP XML and Netsparker XML. Architecture is detected from Docker Compose files, Kubernetes manifests, OpenAPI specifications, environment files, dependency manifests, and code patterns.
 
-The system is deployed via GitHub Actions for continuous evaluation. Each commit triggers an automated pipeline that runs the full analysis, renders all diagrams (DFD, sub-graphs, master DAG, attack graph), and publishes results as downloadable artifacts.
+The system is deployed via GitHub Actions. The evaluation pipeline starts a live Juice Shop Docker container, runs Semgrep for SAST, runs OWASP ZAP for DAST, and feeds all three inputs into the CausalTM v2 engine. Reports and diagrams are published as downloadable artifacts.
 
 ---
 
@@ -115,67 +130,77 @@ The system is deployed via GitHub Actions for continuous evaluation. Each commit
 
 ### A. Evaluation Target
 
-We evaluate the prototype against OWASP Juice Shop [9], a deliberately vulnerable e-commerce application built on Node.js, Express, and Angular with a SQLite backend. Juice Shop contains over one hundred documented security challenges spanning the OWASP Top Ten, making it a widely used benchmark for security tool evaluation. Importantly, its challenges are fully documented with associated vulnerability types, providing ground truth for comparison.
+We evaluate against OWASP Juice Shop [9], a deliberately vulnerable web application with over one hundred documented security challenges. Its challenges are mapped to vulnerability types, providing ground truth for comparison.
 
 ### B. Methodology
 
-The evaluation proceeds in four steps. First, we model Juice Shop's architecture from its actual deployment structure: a public-facing web application, a REST API backend, a static file server, and a SQLite database, connected by five data flows across two trust boundaries. Second, we run Semgrep with JavaScript, TypeScript, and security audit rule sets against the Juice Shop source code, producing a SARIF report of real static analysis findings. Third, we feed both the architecture model and the SARIF findings into the CausalTM pipeline. Fourth, we compare the tool's output against fifteen known Juice Shop challenges manually mapped to STRIDE categories and CWE identifiers.
+The evaluation uses three real input sources:
+1. **Architecture:** Modeled from Juice Shop's actual structure (6 components, 5 data flows, 2 trust boundaries)
+2. **SAST:** Semgrep scan producing 23 real findings (7 High, 16 Medium) across 7 unique CWE types
+3. **DAST:** OWASP ZAP baseline scan against a running Juice Shop instance producing 10 findings (2 Medium, 5 Low, 3 Informational)
+
+We compare the system's output against 15 known Juice Shop challenges manually mapped to STRIDE categories.
 
 ### C. Results
 
-The Federated Causal Engine completed its analysis in under two seconds, producing the following outputs:
+The CausalTM v2 engine completed analysis in under two seconds:
 
 | Metric | Result |
 |--------|--------|
-| Overall risk score | 0.449 (Medium) |
-| Threats identified (STRIDE) | 18 |
-| Causal attack paths enumerated | 50 |
-| Strategic counterfactual scenarios | 5 |
-| Critical choke points identified | 2 |
+| Overall risk score | 0.462 (Medium) |
+| STRIDE threats identified | 6 (one per category) |
+| SAST base variables | 23 (classified into 4 posture types) |
+| DAST base variables | 10 (runtime-confirmed) |
+| Repo base variables | 11 (structural facts) |
+| Remediation roadmap steps | 11 (to near-zero risk) |
+| Cross-layer effects triggered | 3 (in roadmap steps) |
 
-The eighteen threats distributed evenly across all six STRIDE categories (three per category), reflecting the systematic nature of the rule-based evaluation combined with causal enrichment.
+STRIDE posture per category:
 
-Layer contribution analysis revealed that repository architecture drove 35.7% of the risk signal, DAST confirmation (absent in this evaluation) 34.3%, and SAST findings 30.0%. The relatively balanced contribution, even without DAST data, demonstrates that architectural risk factors alone provide substantial threat intelligence.
+| Category | Posture | Status |
+|----------|---------|--------|
+| Denial of Service | 26% | Critical threat |
+| Information Disclosure | 43% | High threat |
+| Tampering | 56% | High threat |
+| Spoofing | 62% | Medium threat |
+| Repudiation | 67% | Medium threat |
+| Elevation of Privilege | 69% | Medium threat |
 
-The top-scored attack path traced from an external attacker through the web service, exploiting a SQL injection vulnerability (CWE-89), to achieve privilege escalation — a path that corresponds directly to several of Juice Shop's most critical challenges including "Login with SQL injection" and "Retrieve all user credentials."
-
-Counterfactual analysis determined that remediating all critical SAST findings would reduce overall risk by 29.8%, while hardening the architecture through an API gateway and network segmentation would achieve a 15.4% reduction. These quantified recommendations are structurally impossible to produce with correlation-based methods.
+The roadmap's first three steps: (1) Reduce topology exposure — architecture fix with cross-layer effect on attack surface; (2) Improve input validation — code fix with cross-layer effect on attack surface; (3) Add defense-in-depth — architecture fix with cross-layer effect on attack surface.
 
 ### D. Ground Truth Comparison
 
-Of the fifteen manually-mapped Juice Shop challenges used as ground truth, the tool's combined SAST and STRIDE analysis correctly identified threats corresponding to the majority of challenge categories. All six STRIDE categories were represented in the output. CWE coverage aligned with the dominant vulnerability types present in Juice Shop (CWE-89 SQL injection, CWE-79 cross-site scripting, CWE-22 path traversal, CWE-798 hardcoded credentials, CWE-770 missing rate limiting).
+Of 15 known Juice Shop challenges, the system matched 8 (53%) through STRIDE category alignment and CWE tracing. All six STRIDE categories were represented. The system correctly identified threats corresponding to SQL injection, path traversal, directory listing, rate limiting bypass, and IDOR challenges.
 
-The evaluation was conducted without DAST data (which would require a running application instance). This represents a conservative test of the framework's capabilities — incorporating dynamic analysis confirmation would increase both coverage and confidence scores.
+Challenges missed were primarily those requiring semantic understanding of business logic (JWT forgery, CSRF, specific credential attacks) — confirming that posture-based analysis excels at structural/architectural threats but requires extension for application-specific logic threats.
 
 ---
 
 ## VI. Discussion
 
-### A. Advantages of the Federated Approach
+### A. Posture vs. Vulnerability Counting
 
-The federated architecture provides three properties that distinguish it from both manual threat modeling and machine learning alternatives.
+The shift from counting vulnerabilities to computing posture aligns CausalTM with what STRIDE actually evaluates. A STRIDE analyst does not count bugs — they assess whether the architecture provides adequate controls. Our severity-weighted posture calculation formalises this assessment: Critical findings damage posture more than Low ones, and three Critical findings in authentication bring auth posture to zero (total architectural failure for that control).
 
-First, it achieves modularity through the edge node interface. When a new SAST tool replaces an existing one, only the SAST sub-graph requires modification — the master DAG and other sub-graphs remain untouched. This isolation also localises concept drift: changes in one data source do not propagate uncertainty across the entire model.
+### B. Cross-Layer Value
 
-Second, it enables multi-level reasoning. A security manager can ask strategic questions ("should we invest in fixing code vulnerabilities or hardening architecture?") and receive quantified answers. An engineer can ask tactical questions ("what specific fix blocks the most attack paths?") and receive equally concrete guidance. No existing tool supports both levels from a single analysis.
+The cross-layer dependency rules produced three triggered effects in the Juice Shop evaluation. This demonstrates the core value proposition: a single code fix (improving validation) simultaneously improves the runtime attack surface — the system predicts this before the fix is applied, enabling informed investment decisions.
 
-Third, it operates without historical data. The causal relationships are derived from security domain knowledge (MITRE CWE consequence classifications, STRIDE applicability rules) rather than learned from past incidents. This eliminates the cold-start problem that renders machine learning approaches unusable at organisations without extensive vulnerability history.
+### C. Limitations
 
-### B. Limitations
+The posture calibration (max_deficit = 3.0) is expert-specified rather than empirically derived. The evaluation uses a single deliberately-vulnerable application; real-world applications with lower vulnerability density need validation. The architecture was modeled rather than fully auto-detected. Per-flow STRIDE evaluation (rather than per-category) would increase granularity.
 
-The current prototype has several limitations that define the immediate research agenda. Edge weights in the master DAG are specified by domain expertise rather than estimated from data — formalising these using Pearl's do-calculus with backdoor adjustment [7] is planned for the next iteration. The evaluation uses a single benchmark application; broader validation across diverse architectures and technology stacks is needed. The absence of DAST data in the current evaluation represents an incomplete test of the cross-layer correlation capability.
+### D. Threats to Validity
 
-### C. Threats to Validity
-
-The Juice Shop architecture was modeled from its known structure rather than fully auto-detected, which represents an optimistic assumption about detection accuracy. The ground truth mapping was produced by a single researcher; inter-rater reliability would strengthen the evaluation. The prototype has not been compared head-to-head against commercial threat modeling tools in a controlled setting.
+The ground truth mapping was produced by a single researcher. The severity weights align with industry convention but have not been validated through expert panel consensus. The system has not been compared head-to-head against commercial threat modeling tools.
 
 ---
 
 ## VII. Conclusion
 
-This paper has presented a Federated Structural Causal Model for automated STRIDE threat modeling that composes independent causal sub-graphs into a cross-layer reasoning system. The architecture supports counterfactual analysis at both tactical and strategic levels, identifies critical choke points in attack paths, and produces risk assessments grounded in causal mechanisms rather than statistical correlation. Evaluation against OWASP Juice Shop demonstrates that the approach produces actionable, quantified threat intelligence in seconds — identifying known vulnerability chains, ranking mitigation options by effectiveness, and attributing risk to specific layers of the security intelligence stack.
+This paper has presented a posture-based Federated Structural Causal Model for automated STRIDE threat modeling. By computing severity-weighted security posture rather than counting vulnerabilities, the system aligns with STRIDE's architectural focus. By introducing cross-layer dependency rules, it predicts side effects of fixes across data sources. By placing STRIDE as a cream layer above the causal model, it identifies threats from design gaps rather than from individual findings.
 
-Future work will formalise the mathematical foundations using Pearl's interventional calculus, expand the evaluation to fifteen or more real-world projects with known CVE histories, incorporate dynamic analysis through automated scanning in the evaluation pipeline, and assess the impact of causal recommendations on security investment decision-making through expert panel studies.
+Evaluation against OWASP Juice Shop with real SAST and DAST data demonstrates that the approach identifies threats across all six STRIDE categories, produces a sequenced remediation roadmap with cross-layer awareness, and traces architectural threats back to specific CWE types for validation. Future work will formalise posture calibration through expert panel studies, expand evaluation to diverse real-world applications, and implement formal Pearl do-calculus for the interventional queries currently approximated through graph operations.
 
 ---
 
@@ -193,27 +218,27 @@ Future work will formalise the mathematical foundations using Pearl's interventi
 
 [6] J. Jacobs, S. Romanosky, I. Adjerid, and W. Baker, "Improving vulnerability remediation through better exploit prediction," *J. Cybersecurity*, vol. 7, no. 1, pp. 1-14, 2021.
 
-[7] J. Pearl, *Causality: Models, Reasoning, and Inference*, 2nd ed. Cambridge: Cambridge University Press, 2009.
+[7] W. Xiong and R. Lagerstrom, "Threat modeling — A systematic literature review," *Computers and Security*, vol. 84, pp. 53-69, 2019.
 
-[8] D. Arp, E. Quiring, F. Pendlebury, et al., "Dos and don'ts of machine learning in computer security," in *Proc. 31st USENIX Security Symp.*, Boston: USENIX, 2022, pp. 3971-3988.
+[8] J. Pearl, *Causality: Models, Reasoning, and Inference*, 2nd ed. Cambridge: Cambridge University Press, 2009.
 
-[9] B. Kimminich and OWASP Foundation, "OWASP Juice Shop: Probably the most modern and sophisticated insecure web application," 2024. [Online]. Available: https://owasp.org/www-project-juice-shop/
+[9] D. Arp, E. Quiring, F. Pendlebury, et al., "Dos and don'ts of machine learning in computer security," in *Proc. 31st USENIX Security Symp.*, Boston: USENIX, 2022, pp. 3971-3988.
 
-[10] OWASP, "PyTM: Pythonic threat modeling," OWASP Foundation, 2023. [Online]. Available: https://owasp.org/www-project-pytm/
+[10] B. Kimminich and OWASP Foundation, "OWASP Juice Shop: Probably the most modern and sophisticated insecure web application," 2024. [Online]. Available: https://owasp.org/www-project-juice-shop/
 
-[11] T. Le, T. Chen, and M. A. Babar, "A survey on data-driven software vulnerability assessment and prioritization," *ACM Computing Surveys*, vol. 54, no. 5, pp. 1-36, 2021.
+[11] OWASP, "PyTM: Pythonic threat modeling," OWASP Foundation, 2023. [Online]. Available: https://owasp.org/www-project-pytm/
 
-[12] Y. Fang, Y. Liu, and Z. Gao, "Causal inference for intrusion detection: A survey," *IEEE Access*, vol. 10, pp. 56892-56912, 2022.
+[12] T. Le, T. Chen, and M. A. Babar, "A survey on data-driven software vulnerability assessment and prioritization," *ACM Computing Surveys*, vol. 54, no. 5, pp. 1-36, 2021.
 
-[13] G. Husari, X. Niu, B. Chu, and E. Al-Shaer, "Using entropy and mutual information to extract threat actions from cyber threat intelligence," *Int. J. Information Security*, vol. 19, pp. 531-550, 2020.
+[13] Y. Fang, Y. Liu, and Z. Gao, "Causal inference for intrusion detection: A survey," *IEEE Access*, vol. 10, pp. 56892-56912, 2022.
 
-[14] B. Scholkopf, F. Locatello, S. Bauer, et al., "Toward causal representation learning," *Proc. IEEE*, vol. 109, no. 5, pp. 612-634, 2021.
+[14] G. Husari, X. Niu, B. Chu, and E. Al-Shaer, "Using entropy and mutual information to extract threat actions from cyber threat intelligence," *Int. J. Information Security*, vol. 19, pp. 531-550, 2020.
 
-[15] X. Ou, S. Govindavajhala, and A. W. Appel, "MulVAL: A logic-based network security analyzer," in *Proc. 14th USENIX Security Symp.*, Baltimore: USENIX, 2005, pp. 113-128.
+[15] B. Scholkopf, F. Locatello, S. Bauer, et al., "Toward causal representation learning," *Proc. IEEE*, vol. 109, no. 5, pp. 612-634, 2021.
 
 [16] J. Pearl, M. Glymour, and N. P. Jewell, *Causal Inference in Statistics: A Primer*. Chichester: Wiley, 2016.
 
-[17] W. Xiong and R. Lagerstrom, "Threat modeling — A systematic literature review," *Computers and Security*, vol. 84, pp. 53-69, 2019.
+[17] X. Ou, S. Govindavajhala, and A. W. Appel, "MulVAL: A logic-based network security analyzer," in *Proc. 14th USENIX Security Symp.*, Baltimore: USENIX, 2005, pp. 113-128.
 
 [18] G. Dhillon, R. Syed, and F. de Sa-Soares, "Information security management in the new world," *European J. Information Systems*, vol. 30, no. 3, pp. 233-244, 2021.
 
