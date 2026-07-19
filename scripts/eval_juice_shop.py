@@ -19,9 +19,8 @@ from collections import Counter
 
 sys.path.insert(0, ".")
 
-from src.causal.federated.engine import FederatedCausalEngine
+from src.causal.v2.engine import CausalTMv2Engine
 from src.dfd.builder import DFDBuilder
-from src.stride.engine import StrideEngine
 from src.reporter.generator import ReportGenerator
 from src.ingestors.sarif_ingestor import SARIFIngestor
 
@@ -392,35 +391,84 @@ def main():
     print(f"  Trust Boundaries: {len(component_graph['trust_boundaries'])}")
     print()
 
-    # ──── Step 3: Run Federated Causal Engine ────────────────────────────
-    print("[3/6] Running Federated Causal Engine...")
-    engine = FederatedCausalEngine()
-    engine.build_graph(component_graph, sast_findings, dast_findings=dast_findings)
-    causal_result = engine.analyze()
-    print(f"  Overall Risk: {causal_result['overall_risk']:.3f} ({causal_result['risk_rating']})")
-    print(f"  Attack Paths: {causal_result['graph_stats'].get('attack_paths_found', 0)}")
-    print(f"  DAST Data Available: {'Yes' if dast_findings else 'No (not observed)'}")
-    print(f"  Layer Contributions:")
-    for layer, contrib in causal_result["federated"]["layer_contributions"].items():
-        print(f"    {layer}: {contrib:.1%}")
+    # ──── Step 3: Run CausalTM v2 Engine ─────────────────────────────────
+    print("[3/6] Running CausalTM v2 Engine (STRIDE as cream layer)...")
+    engine = CausalTMv2Engine()
+    engine.build(component_graph, sast_findings, dast_findings)
+    result = engine.analyze()
+
+    print(f"  Overall Risk: {result.overall_risk:.3f} ({result.risk_rating})")
+    print(f"  STRIDE Threats: {result.threat_model.total_threats}")
+    print(f"  STRIDE Posture per Category:")
+    for cat, score in result.threat_model.posture_per_category.items():
+        print(f"    {cat}: {score:.0%}")
+    print(f"  Layer Summary:")
+    for layer, summary in result.layer_summary.items():
+        observed = summary.get("observed", True)
+        obs_str = "" if observed else " (not observed)"
+        print(f"    {layer}: {summary.get('base_variables', 0)} base vars → {summary.get('edge_nodes', 0)} edge nodes{obs_str}")
     print()
 
-    # ──── Step 4: Build DFD + Apply STRIDE ───────────────────────────────
-    print("[4/6] Building DFD and applying STRIDE classification...")
-    dfd_builder = DFDBuilder()
-    dfd_model = dfd_builder.build(component_graph, causal_result)
+    # ──── Step 3b: Generate Roadmap to Zero ──────────────────────────────
+    print("[3b/6] Computing remediation roadmap to 0% risk...")
+    roadmap = engine.roadmap_to_zero()
+    print(f"  Steps to near-zero: {len(roadmap)}")
+    for step in roadmap[:5]:
+        cross = f" (+{len(step.get('cross_layer_effects', []))} cross-layer effects)" if step.get('cross_layer_effects') else ""
+        print(f"    Step {step['step']}: Fix {step['name']} ({step['layer']}) | {step['current_value']:.2f} → {step['target_value']:.2f}{cross}")
+    print()
 
-    stride_engine = StrideEngine()
-    threats = stride_engine.classify(dfd_model, causal_result)
-    print(f"  Threats identified: {len(threats)}")
+    # ──── Step 4: Build DFD ──────────────────────────────────────────────
+    print("[4/6] Building Data Flow Diagram...")
+    dfd_builder = DFDBuilder()
+    # Use a simple causal_result dict for DFD builder compatibility
+    causal_result_compat = {
+        "overall_risk": result.overall_risk,
+        "risk_rating": result.risk_rating,
+        "attack_paths": {},
+        "confirmed_exploitable": [],
+        "confounder_adjustments": {},
+        "high_risk_flows": [],
+        "mediators": [],
+        "counterfactuals": [],
+        "graph_stats": {},
+        "threat_counts_by_element": {},
+        "causal_attack_graph": {"paths": [], "choke_points": [], "total_paths": 0},
+        "federated": {"layer_contributions": {}, "intermediate_scores": {}, "tactical_counterfactuals": []},
+    }
+    dfd_model = dfd_builder.build(component_graph, causal_result_compat)
+
+    # Convert v2 threats to the format the report generator expects
+    threats = []
+    for t in result.threat_model.threats:
+        threats.append({
+            "id": t.id,
+            "category": t.category,
+            "title": t.title,
+            "description": t.description,
+            "severity": t.severity,
+            "confidence": t.confidence,
+            "element_id": "",
+            "element_name": ", ".join(t.affected_components) if t.affected_components else "Architecture",
+            "element_type": "architecture",
+            "source": "STRIDE v2 (Cream Layer)",
+            "mitigations": [t.remediation_architecture, t.remediation_code, t.remediation_verification],
+            "cwe_ids": [],
+            "evidence": t.evidence_sast + t.evidence_dast + t.evidence_repo,
+            "is_confirmed": t.layers_confirming >= 2,
+            "causal_severity_score": t.stride_posture_score,
+            "attack_vector": None,
+            "prerequisites": [],
+            "affected_data": [],
+        })
+
+    print(f"  DFD Elements: {len(dfd_model.get('elements', []))}")
+    print(f"  STRIDE Threats: {len(threats)}")
 
     # Count by STRIDE category
     stride_counts = Counter()
     for t in threats:
-        cat = str(t.get("category", "Unknown"))
-        if "." in cat:
-            cat = cat.split(".")[-1].replace("_", " ").title()
-        stride_counts[cat] += 1
+        stride_counts[t["category"]] += 1
     print(f"  By STRIDE: {dict(stride_counts)}")
     print()
 
@@ -429,7 +477,7 @@ def main():
     print(f"  Ground truth challenges: {len(JUICE_SHOP_GROUND_TRUTH)}")
     print()
 
-    evaluation = evaluate_against_ground_truth(sast_findings, threats, causal_result)
+    evaluation = evaluate_against_ground_truth(sast_findings, threats, causal_result_compat)
 
     print(f"  === EVALUATION RESULTS ===")
     print(f"  CWE Coverage: {evaluation['cwe_coverage']['found']}/{evaluation['cwe_coverage']['total']} known CWEs detected ({evaluation['cwe_coverage']['percentage']:.0f}%)")
@@ -470,8 +518,8 @@ def main():
 
         # SAST Sub-Graph
         sast_path = causal_renderer.render_subgraph(
-            engine.sast_subgraph,
-            title="SAST Sub-Graph (Code-Level Causal Reasoning)",
+            engine.sast_subdag,
+            title="SAST Sub-Graph — Authentication/Crypto/Validation Posture",
             output_path=diagram_dir / "juice-shop-sast-subgraph.svg",
         )
         if sast_path:
@@ -479,41 +527,28 @@ def main():
 
         # DAST Sub-Graph
         dast_path = causal_renderer.render_subgraph(
-            engine.dast_subgraph,
-            title="DAST Sub-Graph (Runtime-Level Causal Reasoning)",
+            engine.dast_subdag,
+            title="DAST Sub-Graph — Runtime Security Posture",
             output_path=diagram_dir / "juice-shop-dast-subgraph.svg",
         )
         if dast_path:
             print(f"  DAST Sub-Graph: {dast_path}")
 
         # Repo Sub-Graph
-        repo_path = causal_renderer.render_subgraph(
-            engine.repo_subgraph,
-            title="Repo Sub-Graph (Architecture-Level Causal Reasoning)",
+        repo_path_svg = causal_renderer.render_subgraph(
+            engine.repo_subdag,
+            title="Repo Sub-Graph — Structural Design Posture",
             output_path=diagram_dir / "juice-shop-repo-subgraph.svg",
         )
-        if repo_path:
-            print(f"  Repo Sub-Graph: {repo_path}")
+        if repo_path_svg:
+            print(f"  Repo Sub-Graph: {repo_path_svg}")
 
         # Master DAG
-        master_path = causal_renderer.render_master_dag(
-            engine.master_dag,
-            title="Master DAG — Cross-Layer Causal Reasoning",
-            output_path=diagram_dir / "juice-shop-master-dag.svg",
-        )
-        if master_path:
-            print(f"  Master DAG: {master_path}")
+        # v2 master doesn't have the same render interface — skip complex render
+        print(f"  Master DAG: posture scores included in report")
 
-        # Attack Graph (top 5 paths)
-        if engine.attack_graph:
-            attack_path = causal_renderer.render_attack_graph(
-                engine.attack_graph,
-                title="Causal Attack Graph — OWASP Juice Shop",
-                output_path=diagram_dir / "juice-shop-attack-graph.svg",
-                max_paths=5,
-            )
-            if attack_path:
-                print(f"  Attack Graph: {attack_path}")
+        # Attack Graph — v2 uses STRIDE threats instead
+        print(f"  Attack Graph: replaced by STRIDE threat posture in v2")
 
     except Exception as e:
         print(f"  Causal Graphs: SKIPPED ({e})")
@@ -536,7 +571,7 @@ def main():
     reporter.generate_from_data(
         dfd_model=dfd_model,
         threats=threats,
-        causal_result=causal_result,
+        causal_result=causal_result_compat,
         diagram_svg=diagram_svg_content,
         master_dag_svg=master_dag_svg,
         attack_graph_svg=attack_graph_svg,
@@ -550,7 +585,7 @@ def main():
     reporter.generate_from_data(
         dfd_model=dfd_model,
         threats=threats,
-        causal_result=causal_result,
+        causal_result=causal_result_compat,
         project_name="OWASP Juice Shop",
         scan_id="juice-shop-eval",
         output_path=output_dir / "juice-shop-report.md",
@@ -561,15 +596,18 @@ def main():
     # Save evaluation results as JSON
     eval_output = {
         "project": "OWASP Juice Shop",
+        "engine_version": "v2 (STRIDE cream layer)",
         "sast_findings_count": len(sast_findings),
+        "dast_findings_count": len(dast_findings),
         "architecture_components": len(component_graph["components"]),
-        "overall_risk": causal_result["overall_risk"],
-        "risk_rating": causal_result["risk_rating"],
-        "threats_identified": len(threats),
-        "stride_distribution": dict(stride_counts),
-        "attack_paths": causal_result["graph_stats"].get("attack_paths_found", 0),
-        "layer_contributions": causal_result["federated"]["layer_contributions"],
-        "counterfactuals": causal_result.get("counterfactuals", [])[:5],
+        "overall_risk": result.overall_risk,
+        "risk_rating": result.risk_rating,
+        "stride_threats": result.threat_model.total_threats,
+        "stride_posture": result.threat_model.posture_per_category,
+        "stride_by_severity": result.threat_model.by_severity,
+        "layer_summary": result.layer_summary,
+        "roadmap_steps": len(roadmap),
+        "roadmap": roadmap[:5],
         "evaluation": evaluation,
         "ground_truth_count": len(JUICE_SHOP_GROUND_TRUTH),
     }
@@ -581,25 +619,24 @@ def main():
     # ──── Summary ────────────────────────────────────────────────────────
     print()
     print("=" * 70)
-    print("EVALUATION COMPLETE")
+    print("EVALUATION COMPLETE (CausalTM v2 — STRIDE Cream Layer)")
     print("=" * 70)
-    print(f"  Risk Score:           {causal_result['overall_risk']:.3f} ({causal_result['risk_rating']})")
+    print(f"  Overall Risk:         {result.overall_risk:.3f} ({result.risk_rating})")
+    print(f"  STRIDE Threats:       {result.threat_model.total_threats}")
     print(f"  SAST Findings:        {len(sast_findings)}")
-    print(f"  Threats Identified:   {len(threats)}")
-    print(f"  Attack Paths:         {causal_result['graph_stats'].get('attack_paths_found', 0)}")
+    print(f"  DAST Findings:        {len(dast_findings)}")
     print(f"  Ground Truth Match:   {evaluation['challenge_mapping']['mapped']}/{evaluation['challenge_mapping']['total']} ({evaluation['challenge_mapping']['percentage']:.0f}%)")
     print(f"  CWE Coverage:         {evaluation['cwe_coverage']['found']}/{evaluation['cwe_coverage']['total']} ({evaluation['cwe_coverage']['percentage']:.0f}%)")
     print()
-    print("  Top Counterfactual Recommendations:")
-    for i, cf in enumerate(causal_result.get("counterfactuals", [])[:3]):
-        print(f"    {i+1}. {cf.get('intervention', 'N/A')} ({cf.get('risk_reduction_pct', 0):.1f}% reduction)")
+    print("  STRIDE Posture per Category:")
+    for cat, score in result.threat_model.posture_per_category.items():
+        status = "SECURE" if score > 0.8 else "AT RISK" if score < 0.5 else "PARTIAL"
+        print(f"    {cat}: {score:.0%} ({status})")
     print()
-    print("  Top Attack Path:")
-    paths = causal_result.get("causal_attack_graph", {}).get("paths", [])
-    if paths:
-        top = paths[0]
-        print(f"    {' -> '.join(top.get('path_names', []))}")
-        print(f"    Score: {top.get('score', 0):.3f}")
+    print(f"  Remediation Roadmap: {len(roadmap)} steps")
+    for step in roadmap[:3]:
+        cross = f" (+{len(step.get('cross_layer_effects', []))} cross-layer)" if step.get('cross_layer_effects') else ""
+        print(f"    Step {step['step']}: {step['name']} ({step['layer']}){cross}")
     print("=" * 70)
 
 

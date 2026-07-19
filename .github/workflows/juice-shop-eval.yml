@@ -6,7 +6,7 @@ on:
     paths:
       - 'scripts/eval_juice_shop.py'
       - '.github/workflows/juice-shop-eval.yml'
-      - 'src/causal/federated/**'
+      - 'src/causal/**'
       - 'src/renderer/**'
       - 'src/reporter/templates/**'
       - 'src/stride/**'
