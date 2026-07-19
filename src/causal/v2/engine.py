@@ -370,8 +370,11 @@ class CausalTMv2Engine:
 
         # DFS to find all paths from entry points to high-value targets
         all_paths: list[dict] = []
+        max_total_paths = max_paths * 5  # Limit total exploration
 
         def dfs(current: str, target_set: set, visited: set, path_nodes: list, path_flows: list):
+            if len(all_paths) >= max_total_paths:
+                return
             if len(path_nodes) > max_depth:
                 return
             if current in target_set and len(path_nodes) > 1:
@@ -383,6 +386,8 @@ class CausalTMv2Engine:
                     return
 
             for edge in adjacency.get(current, []):
+                if len(all_paths) >= max_total_paths:
+                    return
                 next_node = edge["target"]
                 if next_node not in visited:
                     visited.add(next_node)
