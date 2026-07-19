@@ -22,7 +22,6 @@ from collections import Counter
 sys.path.insert(0, ".")
 
 from src.causal.v2.engine import CausalTMv2Engine
-from src.dfd.builder import DFDBuilder
 from src.reporter.generator import ReportGenerator
 from src.ingestors.sarif_ingestor import SARIFIngestor
 
@@ -341,13 +340,8 @@ def main():
     # Use enriched component graph from engine
     enriched_graph = engine._component_graph
 
-    # Build DFD
-    dfd_builder = DFDBuilder()
-    try:
-        dfd_model = dfd_builder.build(enriched_graph, None)
-    except Exception as e:
-        print(f"  DFD build error: {e}")
-        dfd_model = {"title": "AWS ECS App - DFD", "elements": [], "data_flows": [], "boundaries": [], "metadata": {}}
+    # Build DFD model using v2 engine's built-in method
+    dfd_model = engine.get_dfd_model()
 
     # Render DFD
     diagram_svg = None

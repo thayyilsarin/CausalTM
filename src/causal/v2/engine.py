@@ -227,6 +227,74 @@ class CausalTMv2Engine:
         """
         return self.master_dag.what_if(layer, edge_node_id, new_value, description)
 
+    def get_dfd_model(self) -> dict:
+        """
+        Generate a DFD-compatible model directly from the enriched component graph.
+        
+        This bypasses Pydantic ComponentGraph validation which may reject
+        enriched data formats. Returns a dict ready for Graphviz rendering.
+        
+        This is the GENERIC method — any caller can use it instead of
+        manually building DFD models or relying on DFDBuilder.
+        """
+        graph = self._component_graph or {}
+        components = [c for c in graph.get("components", []) if c.get("metadata", {}).get("type") != "metadata"]
+        elem_type_map = {"process": "process", "data_store": "data_store", "external_entity": "external_entity"}
+
+        elements = []
+        for c in components:
+            elements.append({
+                "id": c["id"],
+                "name": c.get("name", c["id"]),
+                "element_type": elem_type_map.get(c.get("type"), "process"),
+                "description": c.get("technology", ""),
+                "technology": c.get("technology"),
+                "trust_level": c.get("trust_level"),
+                "is_public_facing": c.get("is_public_facing", False),
+                "has_authentication": c.get("has_authentication", False),
+                "has_encryption": c.get("has_encryption", False),
+                "metadata": c.get("metadata", {}),
+                "layer": 0,
+                "group": None,
+            })
+
+        flows = []
+        for f in graph.get("data_flows", []):
+            flows.append({
+                "id": f["id"],
+                "source_id": f["source_id"],
+                "target_id": f["target_id"],
+                "label": f.get("description", f.get("protocol", "data")),
+                "protocol": f.get("protocol"),
+                "data_types": f.get("data_types", []),
+                "data_sensitivity": f.get("data_sensitivity", []),
+                "is_encrypted": f.get("is_encrypted", False),
+                "is_authenticated": f.get("is_authenticated", False),
+                "crosses_trust_boundary": f.get("crosses_trust_boundary", False),
+                "is_bidirectional": False,
+            })
+
+        boundaries = []
+        for b in graph.get("trust_boundaries", []):
+            boundaries.append({
+                "id": b["id"],
+                "name": b["name"],
+                "trust_level": b.get("trust_level", "internal"),
+                "element_ids": b.get("component_ids", []),
+                "color": "#cccccc",
+            })
+
+        project_name = graph.get("metadata", {}).get("project_name", "System")
+        return {
+            "title": f"{project_name} - Data Flow Diagram",
+            "level": "level_0",
+            "description": f"DFD with {len(elements)} elements and {len(flows)} data flows",
+            "elements": elements,
+            "data_flows": flows,
+            "boundaries": boundaries,
+            "metadata": graph.get("metadata", {}),
+        }
+
     def _risk_to_rating(self, risk: float) -> str:
         """Convert numeric risk to rating."""
         if risk >= 0.7:
