@@ -295,6 +295,211 @@ class CausalTMv2Engine:
             "metadata": graph.get("metadata", {}),
         }
 
+    def get_attack_paths(self, max_paths: int = 10, max_depth: int = 8) -> list[dict]:
+        """
+        Compute concrete attack paths through the component graph.
+
+        Uses BFS/DFS graph traversal from external entry points (external entities
+        and public-facing components) to high-value targets (data stores with
+        sensitive data). Paths are scored by:
+          - Length (shorter = more exploitable)
+          - Boundary crossings (more crossings = more severe if unprotected)
+          - Encryption gaps (unencrypted flows increase score)
+          - Authentication gaps (unauthenticated flows increase score)
+          - Data sensitivity (paths reaching sensitive data score higher)
+
+        Returns:
+            Sorted list of attack path dicts ready for report rendering:
+            [{"node_names": [...], "node_ids": [...], "score": float,
+              "crosses_trust_boundary": bool, "boundary_crossings": int,
+              "unencrypted_hops": int, "unauthenticated_hops": int,
+              "target_sensitivity": [...], "description": str}]
+        """
+        graph = self._component_graph or {}
+        components = [c for c in graph.get("components", []) if c.get("metadata", {}).get("type") != "metadata"]
+        flows = graph.get("data_flows", [])
+
+        if not components or not flows:
+            return []
+
+        # Build lookup maps
+        comp_by_id = {c["id"]: c for c in components}
+
+        # Build adjacency list from data flows (directed graph)
+        adjacency: dict[str, list[dict]] = {c["id"]: [] for c in components}
+        for flow in flows:
+            src = flow.get("source_id")
+            tgt = flow.get("target_id")
+            if src in adjacency and tgt in comp_by_id:
+                adjacency[src].append({
+                    "target": tgt,
+                    "flow": flow,
+                })
+            # Add reverse edge for bidirectional flows
+            if flow.get("is_bidirectional") and tgt in adjacency and src in comp_by_id:
+                adjacency[tgt].append({
+                    "target": src,
+                    "flow": flow,
+                })
+
+        # Identify entry points: external entities + public-facing components
+        entry_points = [
+            c["id"] for c in components
+            if c.get("type") == "external_entity" or c.get("is_public_facing", False)
+        ]
+
+        # Identify high-value targets: data stores (especially with sensitive data)
+        high_value_targets = set()
+        for c in components:
+            if c.get("type") == "data_store":
+                high_value_targets.add(c["id"])
+
+        # Also mark processes that handle sensitive data as intermediate targets
+        sensitive_flows = [f for f in flows if any(
+            s in (f.get("data_sensitivity") or [])
+            for s in ["credentials", "pii", "confidential", "secret"]
+        )]
+        sensitive_targets = set()
+        for f in sensitive_flows:
+            sensitive_targets.add(f.get("target_id", ""))
+            sensitive_targets.add(f.get("source_id", ""))
+
+        if not entry_points or not high_value_targets:
+            # Can't form meaningful paths without both ends
+            return []
+
+        # DFS to find all paths from entry points to high-value targets
+        all_paths: list[dict] = []
+
+        def dfs(current: str, target_set: set, visited: set, path_nodes: list, path_flows: list):
+            if len(path_nodes) > max_depth:
+                return
+            if current in target_set and len(path_nodes) > 1:
+                # Found a valid path — score it
+                scored = self._score_attack_path(path_nodes, path_flows, comp_by_id)
+                all_paths.append(scored)
+                # Don't return — keep exploring through data stores to other targets
+                if len(path_nodes) > max_depth - 2:
+                    return
+
+            for edge in adjacency.get(current, []):
+                next_node = edge["target"]
+                if next_node not in visited:
+                    visited.add(next_node)
+                    path_nodes.append(next_node)
+                    path_flows.append(edge["flow"])
+                    dfs(next_node, target_set, visited, path_nodes, path_flows)
+                    path_flows.pop()
+                    path_nodes.pop()
+                    visited.remove(next_node)
+
+        for entry in entry_points:
+            visited = {entry}
+            dfs(entry, high_value_targets, visited, [entry], [])
+
+        # Also find paths to sensitive intermediate nodes (not just data stores)
+        for entry in entry_points:
+            intermediate_targets = sensitive_targets - high_value_targets - {entry}
+            if intermediate_targets:
+                visited = {entry}
+                dfs(entry, intermediate_targets, visited, [entry], [])
+
+        # Deduplicate (same node sequence)
+        seen_sequences = set()
+        unique_paths = []
+        for p in all_paths:
+            key = tuple(p["node_ids"])
+            if key not in seen_sequences:
+                seen_sequences.add(key)
+                unique_paths.append(p)
+
+        # Sort by score (highest risk first) and limit
+        unique_paths.sort(key=lambda p: p["score"], reverse=True)
+        return unique_paths[:max_paths]
+
+    def _score_attack_path(
+        self, path_nodes: list[str], path_flows: list[dict], comp_by_id: dict
+    ) -> dict:
+        """
+        Score an individual attack path.
+
+        Scoring formula:
+            score = (boundary_crossings * 0.3 + unencrypted_hops * 0.25 +
+                     unauthenticated_hops * 0.25 + sensitivity_factor * 0.2) *
+                    length_factor
+
+        Where length_factor = 1.0 / sqrt(len) — shorter paths are more exploitable.
+        """
+        import math
+
+        boundary_crossings = 0
+        unencrypted_hops = 0
+        unauthenticated_hops = 0
+        max_sensitivity = 0.0
+
+        sensitivity_weights = {
+            "public": 0.1, "internal": 0.3,
+            "confidential": 0.7, "credentials": 1.0,
+            "pii": 0.9, "secret": 1.0, "financial": 0.8,
+        }
+
+        for flow in path_flows:
+            if flow.get("crosses_trust_boundary"):
+                boundary_crossings += 1
+            if not flow.get("is_encrypted"):
+                unencrypted_hops += 1
+            if not flow.get("is_authenticated"):
+                unauthenticated_hops += 1
+            for sens in (flow.get("data_sensitivity") or []):
+                max_sensitivity = max(max_sensitivity, sensitivity_weights.get(sens, 0.3))
+
+        num_hops = len(path_flows) if path_flows else 1
+        # Shorter paths are easier to exploit
+        length_factor = 1.0 / math.sqrt(num_hops)
+
+        # Normalize crossing/encryption/auth scores by number of hops
+        crossing_score = min(1.0, boundary_crossings / max(num_hops, 1))
+        encrypt_score = min(1.0, unencrypted_hops / max(num_hops, 1))
+        auth_score = min(1.0, unauthenticated_hops / max(num_hops, 1))
+
+        raw_score = (
+            crossing_score * 0.3
+            + encrypt_score * 0.25
+            + auth_score * 0.25
+            + max_sensitivity * 0.2
+        )
+
+        final_score = round(raw_score * length_factor, 3)
+
+        # Build human-readable path
+        node_names = [comp_by_id[nid].get("name", nid) for nid in path_nodes if nid in comp_by_id]
+        node_ids = list(path_nodes)
+
+        # Build description
+        target_name = node_names[-1] if node_names else "Unknown"
+        entry_name = node_names[0] if node_names else "Unknown"
+        description = f"{entry_name} → {'→ '.join(node_names[1:])} (Score: {final_score:.2f})"
+
+        # Collect target sensitivity
+        target_sensitivity = []
+        if path_flows:
+            last_flow = path_flows[-1]
+            target_sensitivity = last_flow.get("data_sensitivity", [])
+
+        return {
+            "node_names": node_names,
+            "node_ids": node_ids,
+            "score": final_score,
+            "crosses_trust_boundary": boundary_crossings > 0,
+            "boundary_crossings": boundary_crossings,
+            "unencrypted_hops": unencrypted_hops,
+            "unauthenticated_hops": unauthenticated_hops,
+            "target_sensitivity": target_sensitivity,
+            "hops": num_hops,
+            "description": description,
+            "has_confirmed_steps": False,  # Will be enriched by STRIDE layer if DAST confirms
+        }
+
     def _risk_to_rating(self, risk: float) -> str:
         """Convert numeric risk to rating."""
         if risk >= 0.7:

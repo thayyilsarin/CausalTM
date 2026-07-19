@@ -416,10 +416,13 @@ def main():
         {"intervention": f"Fix {s['name']}", "recommendation": f"Fix {s['name']} ({s['layer']}) to {s['target_value']:.0%}.", "risk_reduction_pct": s.get("stride_improvement", 0) * 100}
         for s in roadmap
     ]
-    attack_paths = [
-        {"path_names": ["Architecture Gap", f"{t.category}", t.title[:40]], "score": 1.0 - t.stride_posture_score, "crosses_trust_boundary": True, "has_confirmed_steps": t.layers_confirming >= 2}
-        for t in result.threat_model.threats
-    ]
+
+    # Use engine's graph traversal for concrete attack paths
+    attack_paths = engine.get_attack_paths(max_paths=10)
+    print(f"  Attack Paths: {len(attack_paths)} concrete paths found")
+    for ap in attack_paths[:5]:
+        print(f"    • {' → '.join(ap['node_names'])} (score: {ap['score']:.3f})")
+    print()
 
     causal_compat = {
         "overall_risk": result.overall_risk, "risk_rating": result.risk_rating,

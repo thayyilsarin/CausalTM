@@ -436,19 +436,12 @@ def main():
             "risk_reduction_pct": step.get("stride_improvement", 0) * 100,
         })
 
-    # Build attack paths from STRIDE threats for the report
-    attack_paths_for_report = []
-    for t in result.threat_model.threats:
-        attack_paths_for_report.append({
-            "path_names": [
-                "Architecture Gap",
-                f"{t.category} Threat",
-                t.title[:40],
-            ],
-            "score": 1.0 - t.stride_posture_score,
-            "crosses_trust_boundary": True,
-            "has_confirmed_steps": t.layers_confirming >= 2,
-        })
+    # Build attack paths using engine's graph traversal (concrete paths through architecture)
+    attack_paths_for_report = engine.get_attack_paths(max_paths=10)
+    print(f"  Concrete Attack Paths: {len(attack_paths_for_report)}")
+    for ap in attack_paths_for_report[:5]:
+        print(f"    • {' → '.join(ap['node_names'])} (score: {ap['score']:.3f})")
+    print()
 
     # Build causal_result_compat for DFD builder and report template
     causal_result_compat = {

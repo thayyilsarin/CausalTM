@@ -261,13 +261,72 @@ class SASTSubDAG(ArchitecturalSubDAG):
         return total_deficit
 
     def _classify_by_keywords(self, finding: dict) -> Optional[str]:
-        """Classify a finding by keywords when CWE is not available."""
+        """
+        Classify a finding by keywords when CWE is not available.
+        
+        Handles both application-level findings AND IaC/Terraform findings.
+        Terraform Semgrep rules typically have rule_ids like:
+          terraform.aws.security.security-group-open-ingress
+          terraform.aws.security.missing-encryption-at-rest
+        """
         text = (
             finding.get("title", "") + " " +
             finding.get("rule_id", "") + " " +
-            finding.get("description", "")
+            finding.get("description", "") + " " +
+            finding.get("file_path", "")
         ).lower()
 
+        # ── IaC / Terraform-specific classifications ──
+        # These take priority because IaC findings often lack CWE IDs
+
+        # Auth/Access Control: open security groups, permissive IAM, missing auth
+        iac_auth_keywords = [
+            "security-group", "security_group", "0.0.0.0/0", "open-ingress",
+            "open-egress", "iam-policy", "iam_policy", "star-resource",
+            "wildcard", "overly-permissive", "public-access", "public_access",
+            "no-auth", "missing-auth", "unrestricted", "allow-all",
+            "ingress", "egress", "nacl", "network-acl",
+        ]
+
+        # Crypto: missing encryption, unencrypted storage/transport
+        iac_crypto_keywords = [
+            "encryption", "encrypt", "unencrypted", "missing-encryption",
+            "at-rest", "in-transit", "kms", "ssl", "tls", "https",
+            "no-encryption", "plaintext", "cleartext",
+            "point-in-time-recovery", "backup",
+        ]
+
+        # Validation: missing WAF, no input filtering
+        iac_validation_keywords = [
+            "waf", "web-application-firewall", "rate-limit", "throttl",
+            "ddos", "shield", "input-validation", "api-gateway",
+        ]
+
+        # Logging: missing CloudTrail, access logging, monitoring
+        iac_logging_keywords = [
+            "cloudtrail", "access-log", "access_log", "flow-log", "flow_log",
+            "monitoring", "alarm", "cloudwatch", "logging-enabled",
+            "audit", "trail", "vpc-flow",
+        ]
+
+        # Check IaC keywords first (higher specificity for Terraform findings)
+        is_iac = any(kw in text for kw in ["terraform", ".tf", "hcl", "cloudformation", "aws_", "azurerm_", "google_"])
+
+        if is_iac:
+            for kw in iac_auth_keywords:
+                if kw in text:
+                    return "auth"
+            for kw in iac_crypto_keywords:
+                if kw in text:
+                    return "crypto"
+            for kw in iac_validation_keywords:
+                if kw in text:
+                    return "validation"
+            for kw in iac_logging_keywords:
+                if kw in text:
+                    return "logging"
+
+        # ── Application-level classifications ──
         auth_keywords = ["auth", "login", "password", "credential", "session", "jwt", "token", "csrf", "permission"]
         crypto_keywords = ["encrypt", "crypto", "tls", "ssl", "hash", "cipher", "secret", "key"]
         validation_keywords = ["inject", "xss", "input", "sanitiz", "escap", "traversal", "command", "sql", "eval", "deserializ"]
