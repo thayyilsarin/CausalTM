@@ -1,0 +1,132 @@
+name: Scan Any Project (Generic v2)
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo_url:
+        description: 'Git repository URL to scan'
+        required: true
+        default: 'https://github.com/juice-shop/juice-shop.git'
+      branch:
+        description: 'Branch to scan'
+        required: false
+        default: 'main'
+      project_name:
+        description: 'Project name (for output files)'
+        required: false
+        default: ''
+      run_semgrep:
+        description: 'Run Semgrep SAST scan? (true/false)'
+        required: false
+        default: 'true'
+      run_zap:
+        description: 'Run ZAP DAST scan? Requires app_url input (true/false)'
+        required: false
+        default: 'false'
+      app_url:
+        description: 'Live application URL for DAST scan (e.g., http://localhost:3000)'
+        required: false
+        default: ''
+
+jobs:
+  scan:
+    name: Scan Project with CausalTM v2
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y graphviz
+          pip install networkx pydantic pyyaml jinja2 fastapi uvicorn gitpython lxml graphviz httpx python-multipart
+          if [ "${{ github.event.inputs.run_semgrep }}" = "true" ]; then
+            pip install semgrep
+          fi
+
+      - name: Clone target repository
+        run: |
+          REPO_URL="${{ github.event.inputs.repo_url }}"
+          BRANCH="${{ github.event.inputs.branch }}"
+          echo "Cloning: $REPO_URL (branch: $BRANCH)"
+          git clone --depth 1 --branch "$BRANCH" "$REPO_URL" data/target-repo || \
+          git clone --depth 1 "$REPO_URL" data/target-repo
+          echo "=== Repository cloned ==="
+          ls data/target-repo/ | head -20
+
+      - name: Determine project name
+        id: project
+        run: |
+          NAME="${{ github.event.inputs.project_name }}"
+          if [ -z "$NAME" ]; then
+            NAME=$(basename "${{ github.event.inputs.repo_url }}" .git)
+          fi
+          echo "name=$NAME" >> $GITHUB_OUTPUT
+          echo "Project name: $NAME"
+
+      - name: Run Semgrep SAST (if enabled)
+        if: github.event.inputs.run_semgrep == 'true'
+        run: |
+          echo "Running Semgrep on target repo..."
+          cd data/target-repo
+          semgrep --config "p/security-audit" --sarif -o ../../data/sast-results.sarif . || true
+          echo "=== SAST complete ==="
+          python3 -c "
+          import json
+          try:
+              d = json.load(open('../../data/sast-results.sarif'))
+              total = sum(len(r.get('results',[])) for r in d.get('runs',[]))
+              print(f'SAST findings: {total}')
+          except: print('Could not parse SARIF')
+          "
+
+      - name: Run ZAP DAST (if enabled and URL provided)
+        if: github.event.inputs.run_zap == 'true' && github.event.inputs.app_url != ''
+        run: |
+          echo "Running ZAP against: ${{ github.event.inputs.app_url }}"
+          mkdir -p data
+          chmod 777 data
+          docker run --rm --network host \
+            -v $(pwd)/data:/zap/wrk:rw \
+            -t ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+            -t "${{ github.event.inputs.app_url }}" \
+            -x dast-results.xml \
+            -I || true
+          if [ -f data/dast-results.xml ]; then
+            echo "=== DAST complete ==="
+            ls -la data/dast-results.xml
+          else
+            echo "ZAP report not generated"
+          fi
+
+      - name: Run CausalTM v2 scan
+        run: |
+          ARGS="--repo data/target-repo --project-name ${{ steps.project.outputs.name }}"
+          if [ -f data/sast-results.sarif ]; then
+            ARGS="$ARGS --sast data/sast-results.sarif"
+          fi
+          if [ -f data/dast-results.xml ]; then
+            ARGS="$ARGS --dast data/dast-results.xml"
+          fi
+          echo "Running: python scripts/scan_project.py $ARGS"
+          python scripts/scan_project.py $ARGS
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: threat-model-${{ steps.project.outputs.name }}
+          path: |
+            data/reports/
+            data/diagrams/
+            data/*-eval.json
+            data/sast-results.sarif
+            data/dast-results.xml
+          retention-days: 30
