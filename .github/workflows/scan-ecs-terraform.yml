@@ -1,0 +1,80 @@
+name: Scan AWS ECS Terraform App
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/eval_ecs_terraform.py'
+      - '.github/workflows/scan-ecs-terraform.yml'
+
+jobs:
+  scan:
+    name: Scan amazon-ecs-fullstack-app-terraform
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y graphviz
+
+      - name: Install Python dependencies
+        run: |
+          pip install networkx pydantic pyyaml jinja2 fastapi uvicorn gitpython lxml graphviz httpx python-multipart
+          pip install semgrep
+
+      - name: Clone target repo
+        run: |
+          git clone --depth 1 https://github.com/aws-samples/amazon-ecs-fullstack-app-terraform.git data/target-repo
+          echo "=== Repo structure ==="
+          find data/target-repo -maxdepth 3 -type f | head -60
+          echo ""
+          echo "=== Dockerfiles ==="
+          find data/target-repo -name "Dockerfile*" -o -name "docker-compose*"
+          echo ""
+          echo "=== Terraform files ==="
+          find data/target-repo -name "*.tf" | head -20
+          echo ""
+          echo "=== Config files ==="
+          find data/target-repo -name "*.yaml" -o -name "*.yml" -o -name "*.json" -o -name ".env*" | head -20
+
+      - name: Run Semgrep (SAST scan)
+        run: |
+          cd data/target-repo
+          semgrep --config "p/security-audit" --config "p/terraform" --sarif -o ../../data/ecs-terraform-semgrep.sarif . || true
+          echo "=== SARIF results ==="
+          python3 -c "
+          import json
+          d = json.load(open('../../data/ecs-terraform-semgrep.sarif'))
+          total = sum(len(r.get('results',[])) for r in d.get('runs',[]))
+          print(f'Total findings: {total}')
+          for run in d.get('runs',[]):
+              tool = run.get('tool',{}).get('driver',{}).get('name','unknown')
+              results = run.get('results',[])
+              if results:
+                  print(f'  {tool}: {len(results)} findings')
+                  for r in results[:5]:
+                      print(f'    - {r.get(\"ruleId\",\"?\")} [{r.get(\"level\",\"?\")}] {r.get(\"message\",{}).get(\"text\",\"\")[:80]}')
+          "
+
+      - name: Run CausalTM evaluation
+        run: python scripts/eval_ecs_terraform.py
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ecs-terraform-threat-model
+          path: |
+            data/reports/ecs-terraform-*.html
+            data/reports/ecs-terraform-*.md
+            data/diagrams/ecs-terraform-*.svg
+            data/ecs-terraform-eval.json
+            data/ecs-terraform-semgrep.sarif
+          retention-days: 30
