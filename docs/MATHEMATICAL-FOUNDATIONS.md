@@ -1,577 +1,386 @@
 # Mathematical Foundations: Current State & Future Plan
 
+*Updated to reflect CausalTM v2 — vulnerabilities as base variables, posture as effect*
+
 ## Overview
 
-This document captures the mathematical underpinnings of the CausalTM Federated Structural Causal Model (FSCM). It is organized as:
+This document captures the mathematical underpinnings of the CausalTM Federated Structural Causal Model. The fundamental causal claim is:
 
-1. **Current State** — What math is implemented today (heuristic, engineering-grade)
-2. **Future Plan** — Formal causal inference math to be implemented (Pearl's framework)
-3. **Gap Analysis** — What needs to change and why
-4. **Implementation Roadmap** — How to get from current to formal
+> **Individual vulnerabilities (base variables) CAUSE architectural security posture (edge nodes/effects), which DETERMINES STRIDE threat existence (final assessment).**
+
+This three-level causal chain is what makes CausalTM a true causal model — not just an aggregation engine.
+
+```
+CAUSAL DIRECTION:
+
+  [Vuln₁: CWE-89, Critical] ──┐
+  [Vuln₂: CWE-79, High]    ──┼──CAUSES──▶ [Validation Posture = 0.23] ──DETERMINES──▶ [Tampering THREAT]
+  [Vuln₃: CWE-22, High]    ──┘                    (effect)                             (STRIDE assessment)
+       (base variables / causes)
+```
 
 ---
 
-## 1. CURRENT STATE: Heuristic Mathematical Model
+## 1. CURRENT STATE: Implemented Mathematical Model (v2)
 
-### 1.1 Master DAG Risk Computation
+### 1.1 The Causal Structure
 
-**Current formula (weighted linear combination):**
+**Base Variables (Causes):** Individual SAST/DAST findings or architectural facts.
+Each has properties: CWE, severity, posture_type, file/URL.
+
+**Edge Nodes (Effects):** Severity-weighted posture scores representing the STATE of security controls.
+These are CAUSED by the base variables — they are not arbitrary summaries.
+
+**STRIDE Threats (Assessment):** Determined by posture thresholds applied to edge node values.
 
 ```
-overall_risk = base_risk × reduction_factor
+Layer 3 (Sub-DAGs):    Base Variables ──cause──▶ Edge Nodes (Effects)
+Layer 4 (Master DAG):  Edge Nodes ──determine──▶ STRIDE Posture Nodes ──determine──▶ Overall Risk
+Layer 5 (STRIDE):      Posture < Threshold ──implies──▶ Architectural Threat Exists
+```
+
+### 1.2 Posture Computation (Sub-DAG Level)
+
+**The core formula — severity-weighted deficit:**
+
+```
+severity_weights = {Critical: 1.0, High: 0.7, Medium: 0.4, Low: 0.2}
+max_deficit = 3.0  (calibration constant)
+
+For a given posture type (e.g., "auth"):
+  Let G = set of base variables classified as "auth" posture gaps
+  weighted_deficit = Σᵢ∈G severity_weight(findingᵢ)
+  posture = max(0.0, 1.0 - (weighted_deficit / max_deficit))
+```
+
+**Why this formula is causal (not just aggregation):**
+
+The causal claim is: "Each vulnerability in category C CAUSES a reduction in posture P_C proportional to its severity." This is a structural equation:
+
+```
+P_C := max(0, 1 - (1/K) · Σᵢ∈G_C w(sᵢ))
 
 Where:
-  base_risk = w₁·Exploitability + w₂·Exposure + w₃·Impact_Severity
-  
-  w₁ = 0.4, w₂ = 0.3, w₃ = 0.3  (hand-tuned weights)
-  
-  reduction_factor = 1 - (Mitigation_Posture × mitigation_strength)
-  mitigation_strength = 0.4  (maximum 40% risk reduction from defenses)
+  P_C = posture for category C (auth, crypto, validation, logging)
+  G_C = set of findings classified into category C (base variables)
+  w(sᵢ) = severity weight of finding i
+  K = 3.0 (calibration: 3 Critical findings bring posture to zero)
 ```
 
-**Intermediate variable computation (weighted sum of edge nodes):**
-
-```
-Exploitability = Σᵢ (edge_nodeᵢ.value × weightᵢ × edge_nodeᵢ.causal_strength) / Σᵢ (weightᵢ × strengthᵢ)
-
-Where inputs to Exploitability:
-  - sast.vulnerability_density  (weight: 0.25)
-  - sast.injection_risk         (weight: 0.30)
-  - dast.confirmed_exploitable  (weight: 0.35)
-  - dast.severity_score         (weight: 0.10)
-```
+**Calibration justification:**
+- K = 3.0 means three Critical findings (total weight 3.0) brings posture to 0%
+- One Critical finding reduces posture by 33% (significant — represents complete control failure at one boundary)
+- Three Medium findings (total weight 1.2) reduce posture by 40% — less than one Critical
+- This reflects security reality: one critical auth bypass is worse than three medium info leaks
 
 **Properties:**
-- Deterministic (same input → same output)
+- Monotonically decreasing (more/worse findings → lower posture)
 - Bounded [0, 1]
-- Monotonic (more vulnerabilities → higher risk)
-- No probabilistic semantics
-- No formal causal justification for the weights
+- Severity-sensitive (Critical matters more than Low)
+- Interpretable: "posture = 0.37 means 63% of the calibrated maximum deficit is present"
 
----
+### 1.3 Classification (CWE to Posture Type)
 
-### 1.2 Attack Path Scoring
-
-**Current formula:**
+When CWE identifiers are available:
 
 ```
-path_score = (Σᵢ edge_weightᵢ) / path_length × boundary_bonus × confirmation_bonus
+CWE_TO_POSTURE: CWE-ID → {auth, crypto, validation, logging}
 
-Where:
-  edge_weightᵢ = weight on edge between node i and node i+1 (0-1)
-  path_length = number of nodes in the path
-  boundary_bonus = 1.3 if path crosses trust boundary, else 1.0
-  confirmation_bonus = 1.4 if any step is DAST-confirmed, else 1.0
+Examples:
+  CWE-89 (SQLi) → validation
+  CWE-287 (Missing Auth) → auth
+  CWE-311 (Missing Encryption) → crypto
+  CWE-778 (Insufficient Logging) → logging
+```
+
+When CWE is unavailable (keyword fallback):
+
+```
+CLASSIFY_BY_KEYWORDS(finding.title + finding.rule_id):
+  Contains {auth, login, password, session, jwt, csrf} → auth
+  Contains {encrypt, crypto, tls, ssl, hash, secret} → crypto
+  Contains {inject, xss, input, sanitiz, traversal, eval} → validation
+  Contains {log, audit, trace, monitor} → logging
+  Otherwise → validation (default, most common gap type)
+```
+
+### 1.4 Cross-Layer Propagation (Master DAG Level)
+
+**Forward propagation (What-If):**
+
+```
+Given: Intervention do(edge_nodeₐ = v_new) where v_new ≠ v_current
+
+For each cross-layer rule R where R.trigger = edge_nodeₐ:
+  Δ = v_new - v_current  (change magnitude)
   
-Final score = min(1.0, path_score)
+  If R.trigger_direction matches sign(Δ):
+    affected_current = edge_nodes[R.affected].value
+    effect_magnitude = |Δ| × R.strength
+    
+    If R.effect_direction = "increase":
+      affected_new = min(1.0, affected_current + effect_magnitude)
+    Else:
+      affected_new = max(0.0, affected_current - effect_magnitude)
+    
+    edge_nodes[R.affected].value = affected_new
 ```
 
-**Properties:**
-- Shorter paths score higher (fewer steps = easier attack)
-- Confirmed paths score higher (proven exploitable)
-- Boundary crossings increase severity
-- No probability distribution — single point estimate
-
----
-
-### 1.3 Counterfactual Analysis
-
-**Current formula (graph surgery):**
+**STRIDE posture computation (from edge nodes):**
 
 ```
-effectiveness(intervention) = (paths_before - paths_after) / paths_before
-
-Where:
-  paths_before = count of attack paths from any vulnerability to any impact
-  paths_after = same count after removing the intervention node from the graph
-```
-
-**For tactical counterfactuals (within sub-graph):**
-
-```
-tactical_effectiveness = Σᵢ |edge_node_beforeᵢ - edge_node_afterᵢ| / N
-
-Where N = number of edge nodes in the sub-graph
-```
-
-**For multi-level counterfactuals (tactical → strategic propagation):**
-
-```
-risk_reduction = risk_before - risk_after
-risk_reduction_pct = (risk_before - risk_after) / risk_before × 100
-
-Where:
-  risk_before = master_dag.overall_risk (with original edge node values)
-  risk_after = master_dag.recalculate(new_edge_node_values_after_intervention)
-```
-
-**Properties:**
-- Approximates the do-operator via graph surgery
-- No probabilistic uncertainty
-- No formal abduction step (doesn't infer hidden variables)
-
----
-
-### 1.4 Confounder Handling
-
-**Current approach (detection + confidence reduction):**
-
-```
-If confounder C detected for relationship A → B:
-  threat.confidence = max(0.1, threat.confidence - 0.2)
+For each STRIDE category C:
+  Let E_C = set of edge nodes with C in their stride_relevance
   
-Detection rule:
-  C is a confounder if:
-    C → A exists in graph  AND
-    C → B exists in graph  AND
-    A → B exists in graph  AND
-    C is NOT on the direct path A → B
+  stride_posture(C) = (1/|E_C|) × Σₑ∈E_C adjusted(e)
+  
+  Where adjusted(e) = 
+    (1 - e.value) × e.causal_strength  if e is an exposure/leakage metric (lower = better)
+    e.value × e.causal_strength          otherwise (higher = better)
 ```
 
-**Properties:**
-- Correctly identifies confounder structure (fork: C → A, C → B)
-- But adjustment is arbitrary (subtract 0.2) — not mathematically justified
-- Does not compute the actual confounded vs. deconfounded effect
+**Overall risk:**
+
+```
+overall_risk = 1 - mean(stride_posture(C) for all C in STRIDE categories)
+```
+
+### 1.5 STRIDE Threat Generation
+
+```
+For each STRIDE category C:
+  If stride_posture(C) < THRESHOLD_LOW (0.85):
+    Generate threat with severity = posture_to_severity(stride_posture(C))
+    
+  posture_to_severity(p):
+    p < 0.3 → Critical
+    p < 0.5 → High
+    p < 0.7 → Medium
+    p < 0.85 → Low
+```
+
+### 1.6 Roadmap Algorithm
+
+```
+fixed_nodes = ∅
+current_state = {edge_node_id: edge_node.value for all edge nodes}
+
+REPEAT:
+  best_fix = None
+  best_impact = 0
+  
+  FOR each edge_node e NOT IN fixed_nodes:
+    target = 1.0 (for posture metrics) or 0.1 (for exposure metrics)
+    IF current_state[e] already at target: SKIP
+    
+    // Temporarily update state to current for accurate what-if
+    result = what_if(e.layer, e.id, target)
+    
+    impact = Σ(stride_after - stride_before for all categories) + cross_layer_bonus
+    
+    IF impact > best_impact:
+      best_fix = e
+      best_impact = impact
+  
+  IF best_fix is None OR best_impact ≤ 0.01: BREAK
+  
+  // Apply fix
+  current_state[best_fix.id] = target
+  fixed_nodes.add(best_fix.id)
+  Apply cross-layer effects to current_state
+  
+  roadmap.append(step)
+
+UNTIL risk ≈ 0 OR no more improvements
+```
+
+### 1.7 Backward Propagation (Target → What to Fix)
+
+```
+Given: Target posture value T for edge node E (e.g., auth_posture = 1.0)
+Current: E.value = V (e.g., 0.37)
+Deficit to close: D = T - V (e.g., 0.63)
+
+The edge node's base variables are known: E.base_variables = [v₁, v₂, v₃, ...]
+Each base variable vᵢ contributes: contribution(vᵢ) = severity_weight(vᵢ) / max_deficit
+
+To achieve target T:
+  Must remove base variables until: Σ remaining_weights / max_deficit ≤ (1 - T)
+  
+  Recommendation: Fix base variables in SEVERITY ORDER (Critical first)
+  Because: One Critical fix (weight 1.0/3.0 = 0.33 improvement) achieves more per fix
+           than three Low fixes (weight 0.6/3.0 = 0.20 improvement)
+```
 
 ---
 
-### 1.5 Edge Node Computation (Sub-Graph Level)
+## 2. WHY THIS IS CAUSAL (Not Just Aggregation)
 
-**SAST vulnerability density:**
+### 2.1 The Causal Claim
 
-```
-vulnerability_density = (critical × 1.0 + high × 0.7 + medium × 0.4) / max(total_findings, 1)
-Bounded to [0, 1]
-```
+The model makes an explicit causal claim:
 
-**DAST confirmed exploitable ratio:**
+> "The presence of CWE-89 (SQL Injection) in the codebase CAUSES the input validation posture to be degraded. This degraded posture CAUSES the architecture to be vulnerable to Tampering threats."
 
-```
-confirmed_ratio = confirmed_count / max(total_findings, 1)
-Causal strength = 0.95 (very high — runtime confirmation is strong evidence)
-```
+This is different from correlation:
+- Correlation: "Systems with CWE-89 tend to have breaches" (association)
+- Our model: "CWE-89 CAUSES posture degradation BECAUSE it represents absent input validation at a specific boundary" (mechanism)
 
-**Repo public exposure:**
+### 2.2 The Causal Direction
 
 ```
-exposure = public_facing_components / total_components
+Base Variable (Cause) → Edge Node (Effect) → STRIDE (Assessment)
+
+NOT:
+  STRIDE (Assessment) → Edge Node → Base Variable (this would be diagnostic, not causal)
+  
+NOT:
+  Edge Node = average(Base Variables) (this would be aggregation, not causation)
 ```
 
-**Defense-in-depth score:**
+The direction is justified because:
+- Removing a base variable (fixing a vuln) CHANGES the edge node value (posture improves)
+- This is interventional: do(remove_vuln) → observe(posture_change)
+- The reverse is not true: arbitrarily setting posture to 1.0 doesn't make vulnerabilities disappear
 
-```
-defense = mean(auth_coverage, encrypted_cross_flows_ratio, boundary_count/3, indirect_access_score)
-```
+### 2.3 Cross-Layer as Causal Prediction
+
+The cross-layer rules make a causal prediction:
+
+> "Improving code validation posture (SAST layer) WILL CAUSE the runtime attack surface (DAST layer) to decrease."
+
+This prediction is testable: fix the code, re-run DAST, observe whether attack surface actually decreased. The rule encodes a known causal mechanism (validated code → fewer exploitable endpoints).
+
+### 2.4 Why Bidirectional Propagation Is Causal
+
+**Forward (causal effect):** "If I fix this vuln, what happens to posture and risk?"
+→ This is the do-operator: do(remove_base_var) → observe(edge_node_change) → observe(risk_change)
+
+**Backward (causal attribution):** "What base variables CAUSE this posture deficit?"
+→ This is causal attribution: given the effect (low posture), identify the causes (which vulns)
+
+Both directions are legitimate causal queries on the same DAG structure.
 
 ---
 
-## 2. FUTURE PLAN: Formal Causal Inference Mathematics
+## 3. FUTURE PLAN: Formal Pearl Framework
 
-### 2.1 Structural Causal Model (SCM) Formalization
+### 3.1 Replace Weighted Sum with Structural Equations
 
-**Definition:** An SCM M = (U, V, F, P(U)) consists of:
+**Current:** `posture = max(0, 1 - deficit/K)` (linear)
 
-- **U** = {U_exploit, U_exposure, U_impact, ...} — Exogenous (unobserved) variables
-- **V** = {Exploitability, Exposure, Impact, Mitigation, Risk} — Endogenous (observed) variables
-- **F** = {f₁, f₂, f₃, f₄, f₅} — Structural equations (one per endogenous variable)
-- **P(U)** = Prior distribution over exogenous variables
+**Future:** `posture = σ(-β₀ - Σᵢ βᵢ · xᵢ + U)` where xᵢ = severity-weighted indicator of finding i
 
-**Structural Equations (to replace weighted sums):**
+This gives:
+- Probabilistic interpretation (posture as probability of control adequacy)
+- Non-linear relationships (diminishing returns, threshold effects)
+- Exogenous variables U (unmeasured factors affecting posture)
 
+### 3.2 Formal do-Operator for What-If
+
+**Current:** Set edge node value directly, recompute downstream.
+
+**Future:** Truncated factorization:
 ```
-f₁: Exploitability := σ(β₁·SAST_density + β₂·DAST_confirmed + β₃·Injection_risk + U_exploit)
+P(risk | do(auth_posture = 0.9)) = Σ_z P(risk | auth_posture=0.9, Z=z) × P(Z=z)
 
-f₂: Exposure := σ(β₄·Public_facing + β₅·Boundary_crossings + β₆·Attack_surface + U_exposure)
+Where Z = all other edge nodes (unchanged by this intervention because
+      they're independent in the causal graph — unless cross-layer rule applies)
+```
 
-f₃: Impact_Severity := σ(β₇·Data_sensitivity + β₈·Blast_radius + β₉·SPOF_risk + U_impact)
+### 3.3 Backdoor Adjustment for Confounders
 
-f₄: Mitigation_Posture := σ(β₁₀·Defense_depth + β₁₁·Auth_coverage + β₁₂·TLS_posture + U_mitigation)
+**When historical data available:**
+```
+P(STRIDE_threat | do(validation_posture = x)) = 
+  Σ_z P(STRIDE_threat | validation_posture=x, exposure=z) × P(exposure=z)
 
-f₅: Risk := σ(γ₁·Exploitability + γ₂·Exposure + γ₃·Impact_Severity - γ₄·Mitigation_Posture + U_risk)
+This deconfounds the effect of validation on STRIDE threats
+by controlling for the confounder "exposure" (which affects both
+how many validation issues are FOUND and how dangerous they ARE).
+```
+
+### 3.4 Counterfactual with Abduction (Level 3)
+
+**Current:** Remove base variable, recompute posture (graph surgery).
+
+**Future (3-step procedure):**
+```
+1. ABDUCTION: Given observed posture=0.37, infer U (exogenous factors)
+   "What unobserved factors explain why posture is 0.37 given these findings?"
+   
+2. ACTION: Remove base variable (do(vuln_fixed = True))
+   
+3. PREDICTION: Recompute posture with inferred U but without the removed variable
+   "Given the same unobserved factors, what would posture be without this vuln?"
+```
+
+This gives a more accurate counterfactual because it accounts for factors beyond the measured findings.
+
+### 3.5 Noisy-OR for STRIDE Threat Probability
+
+**Future:**
+```
+P(Spoofing_threat) = 1 - Π_e∈E_spoofing (1 - P(threat | e.value))
 
 Where:
-  σ(x) = 1 / (1 + e^(-x))  — Sigmoid function (bounds output to [0,1])
-  βᵢ, γᵢ = Structural parameters (learnable from data or expert-specified)
-  Uᵢ ~ Distribution (captures unmodeled factors)
-```
+  E_spoofing = edge nodes relevant to Spoofing
+  P(threat | e.value) = probability that edge node e alone would cause Spoofing threat
 
-**Why sigmoid?** Security risk is bounded [0,1], relationships are non-linear (diminishing returns on mitigation), and it enables probabilistic interpretation.
-
-**Alternative: Noisy-OR model (common in security):**
-
-```
-P(Risk = High) = 1 - Π(1 - P(Risk | parentᵢ = active))
-
-Example:
-P(Breach) = 1 - (1 - P(Breach|SQLi)) × (1 - P(Breach|NoAuth)) × (1 - P(Breach|Exposed))
-           = 1 - (1 - 0.6) × (1 - 0.4) × (1 - 0.3)
-           = 1 - 0.4 × 0.6 × 0.7
-           = 1 - 0.168
-           = 0.832
-```
-
-Noisy-OR is particularly suitable because multiple vulnerabilities independently increase risk.
-
----
-
-### 2.2 The do-Operator (Interventional Queries)
-
-**Pearl's Truncated Factorization:**
-
-For a causal model with variables V = {V₁, V₂, ..., Vₙ} and DAG G:
-
-```
-P(v₁, v₂, ..., vₙ | do(Vᵢ = x)) = Π_{j≠i} P(vⱼ | pa(Vⱼ))  if vᵢ = x
-                                    = 0                          if vᵢ ≠ x
-
-Where pa(Vⱼ) = parents of Vⱼ in the causal DAG
-```
-
-**In our system, this means:**
-
-```
-P(Risk > 0.7 | do(Mitigation = "add_gateway"))
-
-= Evaluate structural equation f₅ with Mitigation FORCED to the value 
-  that "add_gateway" produces, regardless of what would naturally occur.
-
-Concretely:
-  1. Set Mitigation_Posture = 0.9 (gateway adds strong defense)
-  2. Do NOT change Exploitability or Exposure (they're independent of Mitigation in the causal graph)
-  3. Compute: Risk = σ(γ₁·E + γ₂·X + γ₃·I - γ₄·0.9 + U_risk)
-  4. Compare to: Risk = σ(γ₁·E + γ₂·X + γ₃·I - γ₄·M_current + U_risk)
-  5. Difference = Causal Effect of adding gateway
-```
-
-**Average Causal Effect (ACE):**
-
-```
-ACE(Mitigation → Risk) = E[Risk | do(M = applied)] - E[Risk | do(M = not_applied)]
-
-If ACE = -0.35, it means: "Applying this mitigation CAUSES a 0.35 reduction in expected risk"
+This models multiple independent paths to the same threat:
+  Auth gap alone could cause Spoofing
+  Boundary gap alone could cause Spoofing
+  Both together increase probability (noisy-OR combination)
 ```
 
 ---
 
-### 2.3 Backdoor Criterion and Adjustment Formula
+## 4. GAP ANALYSIS: Current vs. Formal
 
-**When to use:** When estimating causal effects from OBSERVATIONAL DATA (historical scans + breach outcomes).
-
-**Backdoor Criterion:**
-
-A set Z satisfies the backdoor criterion relative to (X, Y) in DAG G if:
-1. No node in Z is a descendant of X
-2. Z blocks every path between X and Y that contains an arrow INTO X
-
-**Backdoor Adjustment Formula:**
-
-```
-P(Y = y | do(X = x)) = Σ_z P(Y = y | X = x, Z = z) × P(Z = z)
-```
-
-**Application in CausalTM:**
-
-```
-Scenario: Estimating causal effect of "vulnerability count" (X) on "breach probability" (Y)
-Confounder: "Internet exposure" (Z) — causes both more detection AND more breaches
-
-Without adjustment (biased):
-  P(Breach | High_Vulns) = 0.7  (seems like vulns strongly cause breaches)
-
-With backdoor adjustment through Z = {Internet_Exposure}:
-  P(Breach | do(High_Vulns)) = Σ_z P(Breach | High_Vulns, Exposure=z) × P(Exposure=z)
-                              = P(Breach | High_Vulns, Exposed) × P(Exposed)
-                              + P(Breach | High_Vulns, Not_Exposed) × P(Not_Exposed)
-                              = 0.8 × 0.3 + 0.3 × 0.7
-                              = 0.24 + 0.21
-                              = 0.45  (TRUE causal effect is lower — exposure was inflating it)
-```
-
-**Implementation plan:**
-
-```python
-def backdoor_adjustment(self, treatment: str, outcome: str, adjustment_set: list[str]) -> float:
-    """
-    Compute P(outcome | do(treatment)) using backdoor adjustment.
-    
-    Requires historical data with observed values for all variables.
-    """
-    # P(Y|do(X)) = Σ_z P(Y|X,Z) × P(Z)
-    total = 0.0
-    for z_values in self._enumerate_adjustment_set(adjustment_set):
-        p_y_given_x_z = self._conditional_probability(outcome, treatment, z_values)
-        p_z = self._marginal_probability(z_values)
-        total += p_y_given_x_z * p_z
-    return total
-```
-
----
-
-### 2.4 Frontdoor Criterion and Adjustment Formula
-
-**When to use:** When you CANNOT block the backdoor path (unobserved confounders), but you have a mediator.
-
-**Frontdoor Criterion:**
-
-A set M satisfies the frontdoor criterion relative to (X, Y) if:
-1. X blocks all directed paths from X to M
-2. There is no unblocked backdoor path from X to M
-3. All backdoor paths from M to Y are blocked by X
-
-**Frontdoor Adjustment Formula:**
-
-```
-P(Y = y | do(X = x)) = Σ_m P(M = m | X = x) × Σ_x' P(Y = y | M = m, X = x') × P(X = x')
-```
-
-**Application in CausalTM:**
-
-```
-Scenario: Effect of "coding practice" (X) on "breach" (Y)
-Problem: Unobserved confounder U (e.g., team skill level) affects both X and Y
-Mediator: "vulnerability count" (M) — coding practice → vulnerabilities → breach
-
-P(Breach | do(Good_Practice)) = Σ_m P(Vulns=m | Good_Practice) × Σ_x' P(Breach | Vulns=m, Practice=x') × P(Practice=x')
-```
-
-**When this applies in our system:**
-- When organizational factors (unmeasured) confound both security practices and outcomes
-- When we can observe the MEDIATOR (vulnerability count) but not the confounder (team capability)
-
----
-
-### 2.5 Counterfactual Queries (Level 3 — Formal)
-
-**Three-Step Procedure (Abduction-Action-Prediction):**
-
-```
-Question: "Given that we observed Risk=0.8 with current configuration,
-           what WOULD the risk have been if we had added a gateway?"
-
-Step 1: ABDUCTION — Infer exogenous variables given evidence
-  P(U | Risk=0.8, current_observations) 
-  → Solve for U values that are consistent with what we observed
-
-Step 2: ACTION — Modify the SCM (apply intervention)
-  Set Mitigation = "gateway_added" (force the variable)
-  Remove all incoming edges to Mitigation (it's now externally set)
-
-Step 3: PREDICTION — Compute outcome under modified model with inferred U
-  Risk_counterfactual = f₅(Exploitability, Exposure, Impact, Mitigation="gateway", U_inferred)
-```
-
-**Formal notation:**
-
-```
-P(Risk_{do(M=gateway)} = r | Risk = 0.8, Observed_State = current)
-
-= Σ_u P(Risk = r | do(M = gateway), U = u) × P(U = u | Risk = 0.8, Observed_State)
-```
-
-**Implementation plan:**
-
-```python
-def counterfactual_query(self, intervention: dict, evidence: dict) -> float:
-    """
-    Full counterfactual: "Given evidence, what would Y be under intervention?"
-    
-    Uses the 3-step abduction-action-prediction procedure.
-    """
-    # Step 1: Abduction — infer U given evidence
-    u_posterior = self._abduction(evidence)
-    
-    # Step 2: Action — modify SCM
-    modified_scm = self._apply_intervention(intervention)
-    
-    # Step 3: Prediction — compute outcome
-    counterfactual_outcome = modified_scm.predict(u_posterior)
-    
-    return counterfactual_outcome
-```
-
----
-
-### 2.6 Natural Direct and Indirect Effects (Mediation Analysis)
-
-**Purpose:** Decompose the total effect of X on Y into:
-- Direct effect (X → Y, not through mediator)
-- Indirect effect (X → M → Y, through mediator)
-
-**Formulas:**
-
-```
-Total Effect (TE):
-  TE = E[Y | do(X=1)] - E[Y | do(X=0)]
-
-Natural Direct Effect (NDE):
-  NDE = E[Y_{X=1, M=M₀}] - E[Y_{X=0, M=M₀}]
-  (Effect of X on Y if M were held at its natural value under X=0)
-
-Natural Indirect Effect (NIE):
-  NIE = E[Y_{X=0, M=M₁}] - E[Y_{X=0, M=M₀}]  
-  (Effect of X on Y through M only)
-
-Decomposition:
-  TE = NDE + NIE (on additive scale)
-  TE = NDE × NIE (on multiplicative scale)
-```
-
-**Application in CausalTM:**
-
-```
-Total Effect of "adding authentication" on "breach risk":
-  TE = P(Breach | do(Auth=present)) - P(Breach | do(Auth=absent)) = -0.45
-
-Natural Direct Effect (auth directly prevents unauthorized access):
-  NDE = -0.30
-
-Natural Indirect Effect (auth reduces vulnerability exploitability which reduces breach):
-  NIE = -0.15
-
-Interpretation: 67% of auth's protective effect is DIRECT (blocks access),
-               33% is INDIRECT (through reducing exploitability of other vulns)
-               
-Decision: Auth is valuable even if it doesn't fix underlying code vulns.
-```
-
----
-
-### 2.7 Probability of Necessity and Sufficiency
-
-**Purpose:** Answer "Was X necessary/sufficient for Y?" — critical for root cause analysis.
-
-**Probability of Necessity (PN):**
-
-```
-PN = P(Y₀ = 0 | X = 1, Y = 1)
-
-"Given that the breach happened (Y=1) with SQLi present (X=1),
- what's the probability that the breach would NOT have happened 
- if SQLi was absent?"
-```
-
-**Probability of Sufficiency (PS):**
-
-```
-PS = P(Y₁ = 1 | X = 0, Y = 0)
-
-"Given no breach (Y=0) with SQLi absent (X=0),
- what's the probability that a breach WOULD have occurred
- if SQLi was present?"
-```
-
-**Application:** Prioritizing remediation. High PN = fixing this would likely have prevented the breach. High PS = this vulnerability alone is sufficient to cause a breach.
-
----
-
-## 3. GAP ANALYSIS: Current vs. Formal
-
-| Component | Current Math | Formal Math Needed | Difficulty |
+| Component | Current (v2) | Formal (Future) | Gap Severity |
 |---|---|---|---|
-| Risk computation | Weighted sum | Structural equations (sigmoid/noisy-OR) | Medium |
-| Counterfactuals | Graph surgery (remove node, count paths) | Abduction-Action-Prediction (3-step) | High |
-| Confounder handling | Detect fork structure, subtract confidence | Backdoor adjustment formula | Medium |
-| Mediator analysis | Betweenness centrality (frequency) | Natural Direct/Indirect Effects | High |
-| Edge weights | Hand-assigned (0.3, 0.5, 0.8) | Conditional probability tables or learned parameters | Medium |
-| Uncertainty | Point estimates (single number) | Probability distributions P(Y\|do(X)) | High |
-| Historical learning | Not implemented | Parameter estimation from past scan data | High |
-| Causal discovery | Not applicable (structure is given) | Optional: learn structure from data (PC algorithm) | Future |
+| Posture computation | Severity-weighted linear deficit | Sigmoid structural equation with U | Medium |
+| Counterfactual | Graph surgery (set value, recompute) | Abduction-Action-Prediction (3-step) | Medium |
+| Cross-layer rules | Fixed strength multipliers | Learnable parameters from historical data | Medium |
+| STRIDE evaluation | Threshold-based (posture < 0.85) | Noisy-OR probability model | Low |
+| Uncertainty | Point estimates (single number) | Probability distributions with credible intervals | High |
+| Confounder handling | Not yet in v2 (cross-layer rules approximate it) | Formal backdoor adjustment | Medium |
+| Edge weight calibration | Expert-specified (K=3.0) | Empirically estimated from validation data | Medium |
 
 ---
 
-## 4. IMPLEMENTATION ROADMAP
+## 5. IMPLEMENTATION ROADMAP
 
-### Phase 1: Parametric SCM (Immediate — Current Sprint)
-- Replace weighted sums with sigmoid structural equations
-- Define explicit conditional probability tables for known relationships
-- Implement noisy-OR for multi-parent risk nodes
-- Keep DAG structure as-is (expert-defined)
-- **Outcome:** Math is formalized and defensible for the DBA/paper
+### Phase 1: Current (Implemented — v2)
+- Severity-weighted posture (linear deficit model) ✓
+- Cross-layer propagation (fixed strength rules) ✓
+- Bidirectional: forward (what-if) + backward (what to fix) ✓
+- Roadmap to zero (iterative greedy with dedup) ✓
+- CWE tracing from base variables to STRIDE threats ✓
 
-### Phase 2: Proper do-Calculus (Next — After Prototype Works)
+### Phase 2: Sigmoid Structural Equations
+- Replace linear posture formula with sigmoid: P_C = σ(-β₀ - Σ βᵢxᵢ)
+- Add exogenous variables U (unmodeled factors)
+- Enable probabilistic interpretation of posture scores
+- Effort: 2-3 weeks
+
+### Phase 3: Formal do-Calculus
 - Implement truncated factorization for interventional queries
-- Replace "remove node and count" with proper do-operator computation
-- Add Average Causal Effect (ACE) computation
-- **Outcome:** Counterfactuals have proper probabilistic semantics
+- Add Average Causal Effect (ACE) computation for each fix
+- Enable formal comparison: "Fix A has ACE=-0.35, Fix B has ACE=-0.22 → Fix A is 60% more effective"
+- Effort: 3-4 weeks
 
-### Phase 3: Backdoor/Frontdoor Adjustment (When Historical Data Available)
-- Collect historical scan results (runs across multiple projects over time)
-- Implement backdoor adjustment for confounded relationships
-- Implement frontdoor adjustment for unobserved confounders
-- Learn edge weights from data (maximum likelihood or Bayesian estimation)
-- **Outcome:** System improves with data; confounder handling is formally correct
+### Phase 4: Backdoor Adjustment + Learning
+- When historical scan data available: learn cross-layer strengths from observations
+- Apply backdoor adjustment when exposure confounds posture → threat relationship
+- Validate expert-specified calibration against empirical data
+- Effort: 4-6 weeks
 
-### Phase 4: Full Counterfactual Reasoning (Advanced)
-- Implement abduction-action-prediction 3-step procedure
-- Add Probability of Necessity/Sufficiency for root cause analysis
-- Implement Natural Direct/Indirect Effects for mediation analysis
-- Add uncertainty quantification (credible intervals on risk scores)
-- **Outcome:** Full Pearl Level 3 reasoning; publishable as novel contribution
-
-### Phase 5: Causal Discovery (Research Extension)
-- When sufficient historical data accumulated (100+ scans)
-- Apply PC/GES/NOTEARS algorithms to learn/validate DAG structure
-- Compare learned structure against expert-defined structure
-- Identify previously unknown causal relationships
-- **Outcome:** System discovers new security insights from data
-
----
-
-## 5. THEORETICAL POSITIONING (For DBA/Book)
-
-### 5.1 Pearl's Causal Hierarchy (Ladder of Causation)
-
-```
-Level 3: COUNTERFACTUAL (Imagining)
-  "Would the breach have occurred if we had added authentication?"
-  P(Y_x | X', Y')
-  → Our Phase 4 target
-  
-Level 2: INTERVENTIONAL (Doing)  
-  "What happens to risk if we add a gateway?"
-  P(Y | do(X))
-  → Our Phase 2 target (currently approximated by graph surgery)
-  
-Level 1: ASSOCIATIONAL (Seeing)
-  "How often do systems with SQLi get breached?"
-  P(Y | X)
-  → What correlation-based AI does (insufficient for decision-making)
-```
-
-**Our contribution:** Moving threat modeling from Level 1 (where most tools operate) to Level 2-3 (where security decisions actually live).
-
-### 5.2 How This Relates to the Federated Architecture
-
-```
-Level 1 (Association): Each sub-graph computes edge nodes (observations)
-Level 2 (Intervention): Master DAG performs do-calculus across layers
-Level 3 (Counterfactual): Multi-level what-if reasoning (tactical + strategic)
-
-The FEDERATED STRUCTURE enables:
-- Level 2 at the MASTER level (strategic interventions)
-- Level 2 at the SUB-GRAPH level (tactical interventions)
-- Level 3 through PROPAGATION (intervene locally, observe globally)
-```
-
-### 5.3 Key Theorems to Reference
-
-| Theorem | Author | Relevance |
-|---|---|---|
-| Truncated Factorization | Pearl (2000) | Justifies our do-operator implementation |
-| Backdoor Criterion | Pearl (1993) | Justifies our confounder adjustment |
-| Frontdoor Criterion | Pearl (1995) | Justifies mediation-based estimation |
-| Causal Effect Identifiability | Tian & Pearl (2002) | Proves when our queries are answerable |
-| Mediation Formula | Pearl (2001), VanderWeele (2015) | Justifies direct/indirect effect decomposition |
-| Modularity/Autonomy | Halpern & Pearl (2005) | Justifies our federated sub-graph independence |
-
-### 5.4 Key References for the Dissertation
-
-1. Pearl, J. (2009). *Causality: Models, Reasoning, and Inference*. Cambridge University Press. — THE foundational text
-2. Pearl, J., Glymour, M., & Jewell, N.P. (2016). *Causal Inference in Statistics: A Primer*. Wiley. — Accessible introduction
-3. Peters, J., Janzing, D., & Scholkopf, B. (2017). *Elements of Causal Inference*. MIT Press. — Machine learning perspective
-4. Spirtes, P., Glymour, C., & Scheines, R. (2000). *Causation, Prediction, and Search*. MIT Press. — Causal discovery algorithms
-5. Hernan, M.A. & Robins, J.M. (2020). *Causal Inference: What If*. Chapman & Hall. — Applied perspective
-6. Scholkopf, B. et al. (2021). "Toward Causal Representation Learning." Proceedings of the IEEE. — Modular causal models (related to our federation concept)
+### Phase 5: Full Level 3 (Counterfactual)
+- Abduction-Action-Prediction for precise counterfactuals
+- Probability of Necessity: "Was this vuln NECESSARY for the threat to exist?"
+- Probability of Sufficiency: "Is this vuln SUFFICIENT to cause the threat alone?"
+- Effort: 4-6 weeks
 
 ---
 
@@ -579,30 +388,24 @@ The FEDERATED STRUCTURE enables:
 
 | Symbol | Meaning |
 |---|---|
-| X, Y, Z | Variables (treatments, outcomes, confounders) |
-| do(X = x) | Intervention operator (force X to value x) |
-| P(Y \| do(X)) | Interventional distribution (causal effect) |
-| P(Y_x \| X', Y') | Counterfactual probability |
-| pa(V) | Parents of V in the causal DAG |
-| U | Exogenous (unobserved) variables |
-| V | Endogenous (observed) variables |
-| F = {fᵢ} | Set of structural equations |
+| G_C | Set of base variables (findings) in posture category C |
+| w(sᵢ) | Severity weight of finding i (Critical=1.0, High=0.7, Medium=0.4, Low=0.2) |
+| K | Calibration constant (3.0 — three Critical findings = zero posture) |
+| P_C | Posture score for category C (0=no control, 1=fully controlled) |
+| E_S | Set of edge nodes relevant to STRIDE category S |
+| do(X=x) | Intervention operator (force variable X to value x) |
 | σ(x) | Sigmoid function: 1/(1+e^(-x)) |
+| U | Exogenous (unobserved) variables in structural equations |
 | ACE | Average Causal Effect |
 | PN | Probability of Necessity |
 | PS | Probability of Sufficiency |
-| NDE | Natural Direct Effect |
-| NIE | Natural Indirect Effect |
-| TE | Total Effect (NDE + NIE) |
 
 ---
 
-## 7. SUMMARY TABLE: WHAT CHANGES AT EACH PHASE
+## 7. KEY THEORETICAL REFERENCES
 
-| Phase | Current Formula | Replaces With | Library/Tool |
-|---|---|---|---|
-| Phase 1 | `risk = w₁E + w₂X + w₃I` | `risk = σ(β₁E + β₂X + β₃I - β₄M)` | NumPy/SciPy |
-| Phase 2 | Remove node, count paths | Truncated factorization P(Y\|do(X)) | DoWhy / custom |
-| Phase 3 | Subtract 0.2 from confidence | Backdoor: `Σ_z P(Y\|X,Z)P(Z)` | DoWhy / pgmpy |
-| Phase 4 | N/A | Abduction-Action-Prediction | Custom / Pyro |
-| Phase 5 | Expert-defined DAG | PC/GES learned DAG | causal-learn / NOTEARS |
+1. Pearl, J. (2009). *Causality: Models, Reasoning, and Inference*. Cambridge University Press.
+2. Pearl, J., Glymour, M., & Jewell, N.P. (2016). *Causal Inference in Statistics: A Primer*. Wiley.
+3. Schölkopf, B. et al. (2021). "Toward Causal Representation Learning." Proceedings of the IEEE.
+4. Peters, J., Janzing, D., & Schölkopf, B. (2017). *Elements of Causal Inference*. MIT Press.
+5. Hernán, M.A. & Robins, J.M. (2020). *Causal Inference: What If*. Chapman & Hall.
