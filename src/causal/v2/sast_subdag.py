@@ -169,8 +169,8 @@ class SASTSubDAG(ArchitecturalSubDAG):
             stride_relevance=["Spoofing", "Elevation of Privilege"],
             base_variables=self._posture_gaps["auth"],
             evidence=[
-                f"Auth gaps in code: {auth_gaps}" if has_findings else "SAST not performed",
-                f"Posture: {auth_posture:.0%} coverage",
+                f"Auth gaps: {len(self._posture_gaps['auth'])} (weighted deficit: {auth_deficit:.2f})" if has_findings else "SAST not performed",
+                f"Posture: {auth_posture:.0%}",
             ],
             observed=has_findings,
         ))
