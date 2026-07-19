@@ -588,6 +588,18 @@ def main():
         except Exception as me:
             print(f"  Master DAG: SKIPPED ({me})")
 
+        # Attack Graph — render the Repo sub-graph topology as the attack surface view
+        try:
+            attack_path_svg = causal_renderer.render_subgraph(
+                engine.repo_subdag,
+                title="Attack Surface — Architectural Topology (Trust Boundaries & Data Flows)",
+                output_path=diagram_dir / "juice-shop-attack-graph.svg",
+            )
+            if attack_path_svg:
+                print(f"  Attack Graph: {attack_path_svg}")
+        except Exception as ae:
+            print(f"  Attack Graph: SKIPPED ({ae})")
+
     except Exception as e:
         print(f"  Causal Graphs: SKIPPED ({e})")
         import traceback
@@ -596,12 +608,12 @@ def main():
     # Read generated SVGs for embedding in report
     master_dag_svg = None
     attack_graph_svg = None
-    sast_svg_file = diagram_dir / "juice-shop-sast-subgraph.svg"
     master_svg_file = diagram_dir / "juice-shop-master-dag.svg"
-    if sast_svg_file.exists():
-        attack_graph_svg = sast_svg_file.read_text(encoding="utf-8")
+    attack_svg_file = diagram_dir / "juice-shop-attack-graph.svg"
     if master_svg_file.exists():
         master_dag_svg = master_svg_file.read_text(encoding="utf-8")
+    if attack_svg_file.exists():
+        attack_graph_svg = attack_svg_file.read_text(encoding="utf-8")
 
     # Generate reports
     reporter = ReportGenerator()
