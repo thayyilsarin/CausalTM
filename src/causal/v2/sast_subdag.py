@@ -138,21 +138,28 @@ class SASTSubDAG(ArchitecturalSubDAG):
         """
         Compute architectural posture edge nodes.
 
-        Posture is INVERSE of gap density:
-          0 gaps → posture = 1.0 (fully secure)
-          Many gaps → posture → 0.0 (many architectural weaknesses)
-
-        The formula:
-          posture = 1.0 - (gap_count / normalizer)
-          Where normalizer scales based on component count
+        Posture is SEVERITY-WEIGHTED:
+          - Critical gap contributes 1.0 to deficit
+          - High gap contributes 0.7
+          - Medium gap contributes 0.4
+          - Low gap contributes 0.2
+          
+        Formula:
+          weighted_deficit = sum(severity_weight for each gap)
+          posture = max(0, 1.0 - (weighted_deficit / max_expected_deficit))
+          
+        max_expected_deficit is calibrated so that 3 Critical findings = posture 0.0
         """
         edge_nodes = []
         has_findings = bool(self._findings)
-        normalizer = max(self._component_count * 2, 5)  # Expected max gaps per posture type
+
+        severity_weights = {"Critical": 1.0, "High": 0.7, "Medium": 0.4, "Low": 0.2}
+        # Calibration: 3 critical findings (weight 3.0) should bring posture near 0
+        max_deficit = 3.0
 
         # 1. Authentication Posture
-        auth_gaps = len(self._posture_gaps["auth"])
-        auth_posture = max(0.0, 1.0 - (auth_gaps / normalizer))
+        auth_deficit = self._compute_weighted_deficit(self._posture_gaps["auth"], severity_weights)
+        auth_posture = max(0.0, 1.0 - (auth_deficit / max_deficit))
         edge_nodes.append(ArchitecturalEdgeNode(
             id="sast.auth_posture",
             name="Authentication Posture (Code)",
@@ -169,8 +176,8 @@ class SASTSubDAG(ArchitecturalSubDAG):
         ))
 
         # 2. Cryptographic Posture
-        crypto_gaps = len(self._posture_gaps["crypto"])
-        crypto_posture = max(0.0, 1.0 - (crypto_gaps / normalizer))
+        crypto_deficit = self._compute_weighted_deficit(self._posture_gaps["crypto"], severity_weights)
+        crypto_posture = max(0.0, 1.0 - (crypto_deficit / max_deficit))
         edge_nodes.append(ArchitecturalEdgeNode(
             id="sast.crypto_posture",
             name="Encryption Posture (Code)",
@@ -180,15 +187,15 @@ class SASTSubDAG(ArchitecturalSubDAG):
             stride_relevance=["Information Disclosure", "Tampering"],
             base_variables=self._posture_gaps["crypto"],
             evidence=[
-                f"Crypto gaps in code: {crypto_gaps}" if has_findings else "SAST not performed",
-                f"Posture: {crypto_posture:.0%} coverage",
+                f"Crypto gaps: {len(self._posture_gaps['crypto'])} (weighted deficit: {crypto_deficit:.2f})" if has_findings else "SAST not performed",
+                f"Posture: {crypto_posture:.0%}",
             ],
             observed=has_findings,
         ))
 
         # 3. Input Validation Posture
-        validation_gaps = len(self._posture_gaps["validation"])
-        validation_posture = max(0.0, 1.0 - (validation_gaps / normalizer))
+        validation_deficit = self._compute_weighted_deficit(self._posture_gaps["validation"], severity_weights)
+        validation_posture = max(0.0, 1.0 - (validation_deficit / max_deficit))
         edge_nodes.append(ArchitecturalEdgeNode(
             id="sast.validation_posture",
             name="Input Validation Posture (Code)",
@@ -198,15 +205,15 @@ class SASTSubDAG(ArchitecturalSubDAG):
             stride_relevance=["Tampering", "Elevation of Privilege"],
             base_variables=self._posture_gaps["validation"],
             evidence=[
-                f"Validation gaps in code: {validation_gaps}" if has_findings else "SAST not performed",
-                f"Posture: {validation_posture:.0%} coverage",
+                f"Validation gaps: {len(self._posture_gaps['validation'])} (weighted deficit: {validation_deficit:.2f})" if has_findings else "SAST not performed",
+                f"Posture: {validation_posture:.0%}",
             ],
             observed=has_findings,
         ))
 
         # 4. Logging/Audit Posture
-        logging_gaps = len(self._posture_gaps["logging"])
-        logging_posture = max(0.0, 1.0 - (logging_gaps / normalizer))
+        logging_deficit = self._compute_weighted_deficit(self._posture_gaps["logging"], severity_weights)
+        logging_posture = max(0.0, 1.0 - (logging_deficit / max_deficit))
         edge_nodes.append(ArchitecturalEdgeNode(
             id="sast.logging_posture",
             name="Audit Logging Posture (Code)",
@@ -216,8 +223,8 @@ class SASTSubDAG(ArchitecturalSubDAG):
             stride_relevance=["Repudiation"],
             base_variables=self._posture_gaps["logging"],
             evidence=[
-                f"Logging gaps in code: {logging_gaps}" if has_findings else "SAST not performed",
-                f"Posture: {logging_posture:.0%} coverage",
+                f"Logging gaps: {len(self._posture_gaps['logging'])} (weighted deficit: {logging_deficit:.2f})" if has_findings else "SAST not performed",
+                f"Posture: {logging_posture:.0%}",
             ],
             observed=has_findings,
         ))
@@ -235,6 +242,23 @@ class SASTSubDAG(ArchitecturalSubDAG):
 
         self._edge_nodes = {en.id: en for en in edge_nodes}
         return edge_nodes
+
+    def _compute_weighted_deficit(self, gap_var_ids: list[str], severity_weights: dict) -> float:
+        """
+        Compute severity-weighted deficit for a set of posture gaps.
+        
+        Critical findings contribute more to the deficit than Low ones.
+        This makes posture calculation defensible:
+          "One Critical auth bypass (weight 1.0) hurts posture more than
+           three Low missing-header issues (weight 0.6 total)"
+        """
+        total_deficit = 0.0
+        for var_id in gap_var_ids:
+            base_var = self._base_variables.get(var_id, {})
+            severity = base_var.get("severity", "Medium")
+            weight = severity_weights.get(severity, 0.4)
+            total_deficit += weight
+        return total_deficit
 
     def _classify_by_keywords(self, finding: dict) -> Optional[str]:
         """Classify a finding by keywords when CWE is not available."""

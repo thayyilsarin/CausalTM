@@ -130,7 +130,11 @@ class CausalTMv2Engine:
         master_result = self.master_dag.analyze()
 
         # Layer 5: STRIDE cream layer
-        threat_model = self.stride_layer.evaluate(master_result, self._component_graph or {})
+        threat_model = self.stride_layer.evaluate(
+            master_result,
+            self._component_graph or {},
+            sub_dags={"sast": self.sast_subdag, "dast": self.dast_subdag, "repo": self.repo_subdag},
+        )
 
         # Build result
         result = CausalTMv2Result(

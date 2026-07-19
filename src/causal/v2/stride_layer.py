@@ -100,19 +100,21 @@ class StrideLayerV2:
         "low": 0.85,       # Posture below 85% = Low threat (catches more)
     }
 
-    def evaluate(self, master_result: MasterDAGResult, component_graph: dict) -> StrideThreatModelV2:
+    def evaluate(self, master_result: MasterDAGResult, component_graph: dict, sub_dags: dict = None) -> StrideThreatModelV2:
         """
         Evaluate architecture against STRIDE.
 
         Args:
             master_result: Output from Master DAG (posture scores, stride inputs)
             component_graph: Original architecture (for component/flow references)
+            sub_dags: Optional dict of {layer_name: sub_dag} for CWE tracing
 
         Returns:
             Complete STRIDE threat model
         """
         logger.info("[STRIDE v2] Evaluating architecture against STRIDE categories...")
 
+        self._sub_dags = sub_dags or {}
         threats = []
         posture_per_category = {}
 
@@ -147,6 +149,13 @@ class StrideLayerV2:
 
             # Generate threats if posture is below thresholds
             category_threats = evaluator(category_posture, posture_scores, component_graph)
+
+            # Trace CWEs from base variables for each threat
+            for threat in category_threats:
+                threat.affected_components = self._trace_cwes_for_threat(threat)
+                # Store CWEs in a way the report can access
+                threat.affected_flows = self._trace_cwes_for_threat(threat)
+
             threats.extend(category_threats)
 
         # Build result
@@ -417,3 +426,36 @@ class StrideLayerV2:
         elif posture < self.THREAT_THRESHOLDS["medium"]:
             return "Medium"
         return "Low"
+
+    def _trace_cwes_for_threat(self, threat: StrideThreathV2) -> list[str]:
+        """
+        Trace CWE IDs from base variables that contribute to this STRIDE threat.
+        
+        This makes the threat traceable back to specific vulnerability types,
+        enabling ground truth comparison against known CVEs.
+        """
+        cwes = set()
+        sast_subdag = self._sub_dags.get("sast")
+        if not sast_subdag:
+            return []
+
+        # Determine which posture types are relevant to this STRIDE category
+        category_to_posture = {
+            "Spoofing": ["auth"],
+            "Tampering": ["crypto", "validation"],
+            "Repudiation": ["logging"],
+            "Information Disclosure": ["crypto"],
+            "Denial of Service": ["validation"],
+            "Elevation of Privilege": ["auth", "validation"],
+        }
+
+        relevant_types = category_to_posture.get(threat.category, [])
+
+        for var_id, var_data in sast_subdag._base_variables.items():
+            posture_type = var_data.get("posture_type", "")
+            if posture_type in relevant_types:
+                cwe = var_data.get("cwe", "")
+                if cwe:
+                    cwes.add(cwe)
+
+        return sorted(cwes)
