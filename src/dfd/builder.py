@@ -51,7 +51,18 @@ class DFDBuilder:
         Returns:
             DFDModel as dictionary
         """
-        graph = ComponentGraph(**component_graph) if isinstance(component_graph, dict) else component_graph
+        try:
+            graph = ComponentGraph(**component_graph) if isinstance(component_graph, dict) else component_graph
+        except Exception as e:
+            logger.warning(f"ComponentGraph validation failed: {e}. Using dict directly.")
+            # Fallback: work with raw dict
+            from types import SimpleNamespace
+            graph = SimpleNamespace(
+                components=[Component(**c) if isinstance(c, dict) else c for c in component_graph.get("components", [])],
+                data_flows=[DataFlow(**f) if isinstance(f, dict) else f for f in component_graph.get("data_flows", [])],
+                trust_boundaries=[TrustBoundary(**b) if isinstance(b, dict) else b for b in component_graph.get("trust_boundaries", [])],
+                metadata=component_graph.get("metadata", {}),
+            )
 
         logger.info(f"Building DFD (level: {level}) from {len(graph.components)} components")
 

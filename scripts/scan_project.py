@@ -167,6 +167,9 @@ def main():
     engine.build(component_graph, sast_findings, dast_findings)
     result = engine.analyze()
 
+    # Use the ENRICHED component graph (engine adds boundaries, flows, flags)
+    component_graph = engine._component_graph
+
     print(f"  Overall Risk: {result.overall_risk:.3f} ({result.risk_rating})")
     print(f"  STRIDE Threats: {result.threat_model.total_threats}")
     print(f"  STRIDE Posture:")
@@ -194,6 +197,19 @@ def main():
 
     # Build DFD
     dfd_builder = DFDBuilder()
+    try:
+        dfd_model = dfd_builder.build(component_graph, causal_compat)
+    except Exception as dfd_err:
+        print(f"  WARNING: DFD builder failed: {dfd_err}")
+        # Create minimal DFD model so report still generates
+        dfd_model = {
+            "title": f"{project_name} - Data Flow Diagram",
+            "level": "level_0",
+            "elements": [],
+            "data_flows": [],
+            "boundaries": [],
+            "metadata": {},
+        }
     causal_compat = {
         "overall_risk": result.overall_risk, "risk_rating": result.risk_rating,
         "attack_paths": {}, "confirmed_exploitable": [], "confounder_adjustments": {},
@@ -229,7 +245,11 @@ def main():
         "total_paths": len(attack_paths_for_report),
     }
 
-    dfd_model = dfd_builder.build(component_graph, causal_compat)
+    # Re-build DFD with counterfactuals/attack paths included (if first build succeeded)
+    try:
+        dfd_model = dfd_builder.build(component_graph, causal_compat)
+    except Exception as e:
+        print(f"  WARNING: DFD rebuild with causal data failed: {e}")
 
     # Render DFD
     diagram_svg = None
