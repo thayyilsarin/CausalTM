@@ -342,7 +342,7 @@ def main():
     sarif_path = Path("data/juice-shop-semgrep.sarif")
 
     if sarif_path.exists():
-        print("[1/6] Ingesting real Semgrep SARIF findings...")
+        print("[1/6] Ingesting real Semgrep SARIF findings (SAST)...")
         ingestor = SARIFIngestor()
         sast_findings_raw = ingestor.parse(sarif_path)
         sast_findings = [f.model_dump() for f in sast_findings_raw]
@@ -362,6 +362,28 @@ def main():
 
     print()
 
+    # ──── Step 1b: Load DAST findings from ZAP scan ──────────────────────
+    zap_path = Path("data/juice-shop-zap-report.xml")
+    dast_findings = []
+
+    if zap_path.exists():
+        print("[1b/6] Ingesting real ZAP DAST findings...")
+        from src.ingestors.zap_ingestor import ZAPIngestor
+        zap_ingestor = ZAPIngestor()
+        dast_findings_raw = zap_ingestor.parse(zap_path)
+        dast_findings = [f.model_dump() for f in dast_findings_raw]
+        print(f"  Real DAST findings parsed: {len(dast_findings)}")
+
+        dast_sev_counts = Counter(f["severity"] for f in dast_findings)
+        print(f"  By severity: {dict(dast_sev_counts)}")
+
+        dast_cat_counts = Counter(f.get("category", "other") for f in dast_findings)
+        print(f"  By category: {dict(dast_cat_counts)}")
+    else:
+        print("[1b/6] No ZAP report found — DAST sub-graph will be empty (not observed)")
+
+    print()
+
     # ──── Step 2: Build architecture from Juice Shop structure ────────────
     print("[2/6] Building Juice Shop architecture model...")
     component_graph = build_juice_shop_architecture()
@@ -373,11 +395,11 @@ def main():
     # ──── Step 3: Run Federated Causal Engine ────────────────────────────
     print("[3/6] Running Federated Causal Engine...")
     engine = FederatedCausalEngine()
-    # No DAST for this eval (would need running instance)
-    engine.build_graph(component_graph, sast_findings, dast_findings=[])
+    engine.build_graph(component_graph, sast_findings, dast_findings=dast_findings)
     causal_result = engine.analyze()
     print(f"  Overall Risk: {causal_result['overall_risk']:.3f} ({causal_result['risk_rating']})")
     print(f"  Attack Paths: {causal_result['graph_stats'].get('attack_paths_found', 0)}")
+    print(f"  DAST Data Available: {'Yes' if dast_findings else 'No (not observed)'}")
     print(f"  Layer Contributions:")
     for layer, contrib in causal_result["federated"]["layer_contributions"].items():
         print(f"    {layer}: {contrib:.1%}")

@@ -1,4 +1,4 @@
-name: Juice Shop Evaluation
+name: Juice Shop Evaluation (Full — SAST + DAST + Architecture)
 
 on:
   workflow_dispatch:  # Manual trigger
@@ -13,9 +13,21 @@ on:
 
 jobs:
   evaluate:
-    name: Evaluate CausalTM on OWASP Juice Shop
+    name: Full Evaluation (SAST + DAST + Architecture)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
+
+    services:
+      juice-shop:
+        image: bkimminich/juice-shop
+        ports:
+          - 3000:3000
+        options: >-
+          --health-cmd "curl -f http://localhost:3000 || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+          --health-start-period 30s
 
     steps:
       - uses: actions/checkout@v4
@@ -33,33 +45,84 @@ jobs:
           pip install networkx pydantic pyyaml jinja2 fastapi uvicorn gitpython lxml graphviz httpx python-multipart
           pip install semgrep
 
-      - name: Clone OWASP Juice Shop
+      # ──── INPUT 1: Source Code (Architecture Detection) ────────────────
+      - name: Clone OWASP Juice Shop source
         run: |
           git clone --depth 1 https://github.com/juice-shop/juice-shop.git data/juice-shop
-          echo "Juice Shop cloned successfully"
-          ls data/juice-shop/
+          echo "Juice Shop source cloned"
 
-      - name: Run Semgrep on Juice Shop (generate real SARIF)
+      # ──── INPUT 2: SAST (Semgrep → SARIF) ─────────────────────────────
+      - name: Run Semgrep SAST scan
         run: |
           cd data/juice-shop
           semgrep --config "p/javascript" --config "p/typescript" --config "p/security-audit" --sarif -o ../../data/juice-shop-semgrep.sarif . || true
-          echo "SARIF file size:"
-          ls -la ../../data/juice-shop-semgrep.sarif
-          echo "Finding count:"
-          python3 -c "import json; d=json.load(open('../../data/juice-shop-semgrep.sarif')); print(f'Total findings: {sum(len(r.get(\"results\",[]))for r in d.get(\"runs\",[]))}')"
+          echo "=== SAST Results ==="
+          python3 -c "
+          import json
+          d = json.load(open('../../data/juice-shop-semgrep.sarif'))
+          total = sum(len(r.get('results',[])) for r in d.get('runs',[]))
+          print(f'SAST findings: {total}')
+          "
 
-      - name: Run CausalTM evaluation pipeline
+      # ──── INPUT 3: DAST (OWASP ZAP → XML) ─────────────────────────────
+      - name: Wait for Juice Shop to be ready
+        run: |
+          echo "Waiting for Juice Shop at http://localhost:3000..."
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 | grep -q "200"; then
+              echo "Juice Shop is ready!"
+              break
+            fi
+            echo "  Attempt $i/30 — waiting..."
+            sleep 5
+          done
+          # Final check
+          curl -s http://localhost:3000 | head -5
+
+      - name: Run OWASP ZAP DAST scan
+        run: |
+          echo "=== Starting OWASP ZAP Baseline Scan ==="
+          docker run --rm --network host \
+            -v $(pwd)/data:/zap/wrk:rw \
+            owasp/zap2docker-stable:latest \
+            zap-baseline.py \
+            -t http://localhost:3000 \
+            -x /zap/wrk/juice-shop-zap-report.xml \
+            -I || true
+          echo "=== DAST Scan Complete ==="
+          ls -la data/juice-shop-zap-report.xml || echo "ZAP report not found"
+          # Show summary
+          python3 -c "
+          import xml.etree.ElementTree as ET
+          try:
+              tree = ET.parse('data/juice-shop-zap-report.xml')
+              root = tree.getroot()
+              alerts = list(root.iter('alertitem'))
+              print(f'DAST findings: {len(alerts)}')
+              for alert in alerts[:10]:
+                  name = alert.findtext('alert', 'unknown')
+                  risk = alert.findtext('riskcode', '?')
+                  risk_map = {'0': 'Info', '1': 'Low', '2': 'Medium', '3': 'High'}
+                  print(f'  [{risk_map.get(risk, risk)}] {name}')
+          except Exception as e:
+              print(f'Could not parse ZAP report: {e}')
+          " || true
+
+      # ──── RUN CAUSALTM (All 3 inputs) ──────────────────────────────────
+      - name: Run CausalTM full evaluation
         run: python scripts/eval_juice_shop.py
 
+      # ──── UPLOAD ARTIFACTS ──────────────────────────────────────────────
       - name: Upload evaluation results
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: juice-shop-evaluation
+          name: juice-shop-full-evaluation
           path: |
             data/reports/juice-shop-*.html
             data/reports/juice-shop-*.md
             data/diagrams/juice-shop-*.svg
             data/eval-results.json
             data/juice-shop-semgrep.sarif
+            data/juice-shop-zap-report.xml
           retention-days: 30
