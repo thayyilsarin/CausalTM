@@ -97,21 +97,33 @@ class FederatedAnalysisResult(BaseModel):
                     attack_path_scores[node_id]["paths_through"] += 1
 
         # Build confirmed_exploitable: components confirmed by DAST
-        # Check if DAST confirmed_exploitable edge node has high value
+        # Map DAST findings to public-facing components
         confirmed_components = []
         dast_confirmed_value = 0.0
         for en in self.edge_nodes:
             if en.get("id") == "dast.confirmed_exploitable":
                 dast_confirmed_value = en.get("value", 0.0)
-        # If DAST found confirmed exploits, mark all public components
-        if dast_confirmed_value > 0.3:
+
+        # If DAST found ANY findings, mark all public-facing components as confirmed
+        # (DAST by definition only finds things on reachable components)
+        if dast_confirmed_value > 0:
             for en in self.edge_nodes:
                 if en.get("id") == "repo.public_exposure" and en.get("value", 0) > 0:
-                    # Get public component IDs from metadata if available
                     confirmed_components = en.get("metadata", {}).get(
                         "public_component_ids", ""
                     ).split(",")
                     confirmed_components = [c.strip() for c in confirmed_components if c.strip()]
+
+            # Fallback: if no component IDs in metadata, use attack path components
+            if not confirmed_components:
+                for node in self.critical_paths[:10]:
+                    for node_id in node.get("path", []):
+                        if node_id.startswith("process-") and node_id not in confirmed_components:
+                            confirmed_components.append(node_id)
+
+            # Final fallback: mark any component that has attack_path score
+            if not confirmed_components:
+                confirmed_components = list(attack_path_scores.keys())
 
         return {
             "overall_risk": self.overall_risk,
