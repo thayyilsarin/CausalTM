@@ -543,30 +543,32 @@ def main():
         if repo_path_svg:
             print(f"  Repo Sub-Graph: {repo_path_svg}")
 
-        # Master DAG
-        # v2 master doesn't have the same render interface — skip complex render
-        print(f"  Master DAG: posture scores included in report")
-
-        # Attack Graph — v2 uses STRIDE threats instead
-        print(f"  Attack Graph: replaced by STRIDE threat posture in v2")
+        # Master DAG — render v2 master (it has a NetworkX graph with cross-layer edges)
+        try:
+            master_path = causal_renderer.render_subgraph(
+                engine.master_dag,
+                title="Master DAG — Cross-Layer Posture Reasoning",
+                output_path=diagram_dir / "juice-shop-master-dag.svg",
+            )
+            if master_path:
+                print(f"  Master DAG: {master_path}")
+        except Exception as me:
+            print(f"  Master DAG: SKIPPED ({me})")
 
     except Exception as e:
         print(f"  Causal Graphs: SKIPPED ({e})")
         import traceback
         traceback.print_exc()
 
-    # Generate report
-    reporter = ReportGenerator()
-
-    # Read Master DAG and Attack Graph SVGs if they were rendered
+    # Read generated SVGs for embedding in report
     master_dag_svg = None
     attack_graph_svg = None
+    sast_svg_file = diagram_dir / "juice-shop-sast-subgraph.svg"
     master_svg_file = diagram_dir / "juice-shop-master-dag.svg"
-    attack_svg_file = diagram_dir / "juice-shop-attack-graph.svg"
+    if sast_svg_file.exists():
+        attack_graph_svg = sast_svg_file.read_text(encoding="utf-8")
     if master_svg_file.exists():
         master_dag_svg = master_svg_file.read_text(encoding="utf-8")
-    if attack_svg_file.exists():
-        attack_graph_svg = attack_svg_file.read_text(encoding="utf-8")
 
     reporter.generate_from_data(
         dfd_model=dfd_model,

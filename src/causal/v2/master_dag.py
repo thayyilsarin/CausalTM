@@ -154,6 +154,12 @@ class MasterDAGV2:
         self.graph = nx.DiGraph()
         self._edge_nodes: dict[str, ArchitecturalEdgeNode] = {}
         self._cross_layer_rules = CROSS_LAYER_RULES
+        # Compatibility with renderer (which looks for _nodes or _base_variables)
+        self._base_variables: dict[str, dict] = {}
+
+    @property
+    def layer_name(self) -> str:
+        return "master"
 
     def build(self, all_edge_nodes: list[ArchitecturalEdgeNode]) -> None:
         """
@@ -164,7 +170,17 @@ class MasterDAGV2:
         """
         self._edge_nodes = {en.id: en for en in all_edge_nodes}
 
-        # Build graph: edge_nodes → stride_posture_scores
+        # Populate _base_variables for renderer compatibility
+        for en in all_edge_nodes:
+            self._base_variables[en.id] = {
+                "node_type": "edge_node",
+                "name": en.name,
+                "layer": en.layer,
+                "value": en.value,
+                "description": f"[{en.layer.upper()}] {en.name}: {en.value:.2f}",
+            }
+
+        # Build graph: edge_nodes → cross-layer edges
         for en in all_edge_nodes:
             self.graph.add_node(en.id, layer=en.layer, value=en.value, node_type="edge_node")
 

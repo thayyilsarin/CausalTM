@@ -103,6 +103,10 @@ class SASTSubDAG(ArchitecturalSubDAG):
             cwe = finding.get("cwe_id", "")
             posture_type = CWE_TO_POSTURE.get(cwe)
 
+            # If no CWE match, try to classify by title/rule keywords
+            if not posture_type:
+                posture_type = self._classify_by_keywords(finding)
+
             var_id = f"sast_{finding.get('id', 'unknown')}"
             self._add_base_variable(
                 var_id,
@@ -110,13 +114,16 @@ class SASTSubDAG(ArchitecturalSubDAG):
                 severity=finding.get("severity", "Medium"),
                 file_path=finding.get("file_path", ""),
                 title=finding.get("title", ""),
-                posture_type=posture_type or "other",
-                description=f"{cwe}: {finding.get('title', '')} in {finding.get('file_path', '')}",
-                fix_action=f"Fix {cwe} in {finding.get('file_path', 'unknown')}",
+                posture_type=posture_type or "validation",  # Default: treat as validation gap
+                description=f"{cwe or 'Finding'}: {finding.get('title', '')[:50]} in {finding.get('file_path', '')[:30]}",
+                fix_action=f"Fix {cwe or 'issue'} in {finding.get('file_path', 'unknown')}",
             )
 
             if posture_type and posture_type in self._posture_gaps:
                 self._posture_gaps[posture_type].append(var_id)
+            elif not posture_type:
+                # Default unclassified findings to validation (most common)
+                self._posture_gaps["validation"].append(var_id)
 
         self._built = True
         logger.info(
@@ -228,3 +235,31 @@ class SASTSubDAG(ArchitecturalSubDAG):
 
         self._edge_nodes = {en.id: en for en in edge_nodes}
         return edge_nodes
+
+    def _classify_by_keywords(self, finding: dict) -> Optional[str]:
+        """Classify a finding by keywords when CWE is not available."""
+        text = (
+            finding.get("title", "") + " " +
+            finding.get("rule_id", "") + " " +
+            finding.get("description", "")
+        ).lower()
+
+        auth_keywords = ["auth", "login", "password", "credential", "session", "jwt", "token", "csrf", "permission"]
+        crypto_keywords = ["encrypt", "crypto", "tls", "ssl", "hash", "cipher", "secret", "key"]
+        validation_keywords = ["inject", "xss", "input", "sanitiz", "escap", "traversal", "command", "sql", "eval", "deserializ"]
+        logging_keywords = ["log", "audit", "trace", "monitor"]
+
+        for kw in auth_keywords:
+            if kw in text:
+                return "auth"
+        for kw in crypto_keywords:
+            if kw in text:
+                return "crypto"
+        for kw in validation_keywords:
+            if kw in text:
+                return "validation"
+        for kw in logging_keywords:
+            if kw in text:
+                return "logging"
+
+        return None
