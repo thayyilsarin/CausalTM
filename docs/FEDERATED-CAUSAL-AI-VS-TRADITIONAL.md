@@ -1,5 +1,7 @@
 # Federated Causal AI vs. Traditional Correlation-Based AI
 
+*Updated to reflect CausalTM v2 architecture (posture-based, STRIDE cream layer)*
+
 ## The Three Questions
 
 1. **Is this approach better than traditional correlation-based AI models?**
@@ -16,282 +18,232 @@ A correlation-based AI model for security would typically be:
 - A machine learning classifier (Random Forest, XGBoost, Neural Network)
 - Trained on historical data (past vulnerabilities, past incidents)
 - Learns statistical patterns: "when X appears, Y usually also appears"
-- Outputs: probability scores, risk classifications
+- Outputs: probability scores, risk classifications, ranked vulnerability lists
 
-Examples: ML-based vulnerability prioritization (EPSS), anomaly detection, risk scoring models.
+Examples: EPSS (Exploit Prediction Scoring System), ML-based SAST prioritisation, anomaly detection for intrusion, automated severity classification.
 
 ### The Fundamental Difference
 
-| Aspect | Correlation-Based AI | Federated Causal AI (Ours) |
+| Aspect | Correlation-Based AI | CausalTM v2 (Ours) |
 |--------|---------------------|---------------------------|
-| **Core question** | "What USUALLY happens together?" | "What CAUSES what?" |
-| **Logic** | Pattern matching from data | Mechanism-based reasoning |
-| **Reasoning** | "X and Y co-occur → they're related" | "X causes Y because mechanism M exists" |
-| **Direction** | Cannot distinguish cause from effect | Direction is explicit (DAG edges) |
-| **Counterfactual** | Cannot answer "what if?" | Core capability: "If we remove X, does Y disappear?" |
-| **New situations** | Fails on unseen patterns | Works even on novel combinations (mechanisms still apply) |
-| **Explainability** | Black box / feature importance only | Full causal chain: A→B→C→Impact |
+| **Core question** | "Which vulnerabilities are likely to be exploited?" | "What architectural controls are missing and what STRIDE threats exist by design?" |
+| **Logic** | Pattern matching from historical data | Posture assessment from current state + causal mechanism reasoning |
+| **Input** | Features extracted from vulnerability metadata | Security posture extracted from SAST/DAST/Repo as architectural state |
+| **Output** | Ranked vulnerability list with probability scores | STRIDE threat model + sequenced remediation roadmap to zero risk |
+| **Reasoning level** | Associational (Level 1 of Pearl's hierarchy) | Interventional + Counterfactual (Levels 2-3) |
+| **Direction** | Cannot distinguish cause from effect | Explicit causal direction through DAG edges |
+| **Counterfactual** | Cannot answer "what if we fix X?" | Core capability with cross-layer effect prediction |
+| **Architecture awareness** | None — treats vulns as independent items | Central — evaluates the DESIGN, not individual bugs |
 
-### Why Causal is Better FOR THIS PROBLEM
+### Why Posture-Based Causal Is Better FOR STRIDE Threat Modeling
 
-#### 1. Security is Mechanism-Based, Not Pattern-Based
+#### 1. STRIDE Is About Architecture, Not Vulnerability Statistics
 
-A SQL injection causes a data breach because of a MECHANISM (unsanitized input → database query → unauthorized data access). This mechanism is true regardless of whether you have 10 or 10,000 examples in your training data.
-
-Correlation-based AI would need thousands of examples of "SQL injection → breach" to learn this. We ALREADY KNOW the mechanism — encoding it as a causal edge is more efficient and reliable.
-
-#### 2. Correlation Cannot Distinguish Confounders
+STRIDE asks: "Can identity be spoofed at this trust boundary?" — regardless of whether any specific spoofing vulnerability has been found. A correlation model trained on past vulnerabilities cannot answer this. Our system computes authentication posture from available evidence (SAST: auth patterns in code + DAST: auth enforcement at runtime + Repo: auth requirements at boundaries) and determines whether the architecture is vulnerable to spoofing by design.
 
 ```
-Correlation sees:        High vulnerability count → High breach rate
-                         (r = 0.7)
-
-But the TRUE model is:   Internet Exposure → High vulnerability DETECTION
-                         Internet Exposure → High breach rate
-                         
-                         (Exposure is a CONFOUNDER — fixing vulns alone
-                          won't fix the actual cause)
+Correlation AI:  "You have 5 auth-related CVEs → probability of auth breach = 0.73"
+CausalTM v2:    "Auth posture = 37% (3 Critical gaps found) → Spoofing THREAT exists
+                  because the architecture lacks authentication at 2 of 3 trust boundaries.
+                  Fix: Add auth to Frontend→Backend boundary (cross-layer: also fixes
+                  DAST runtime_auth from 60% to ~85%)"
 ```
 
-Our federated causal model explicitly identifies "internet exposure" as a confounder and adjusts severity accordingly. A correlation model would overestimate the impact of fixing vulnerabilities in non-exposed systems.
+#### 2. Severity-Weighted Posture vs. Flat Counting
 
-#### 3. Counterfactuals Are Impossible with Correlation
-
-A correlation model can say: "Risk score = 0.8 (High)"
-
-It CANNOT answer: "If we add an API gateway, would risk drop? By how much?"
-
-Our model answers this directly:
-```
-strategic_counterfactual("add_gateway"):
-  risk_before: 0.78
-  risk_after: 0.42
-  reduction: 46%
-  recommendation: "Adding an API gateway blocks 46% of risk pathways"
-```
-
-This is the difference between a DIAGNOSTIC tool and a DECISION SUPPORT tool.
-
-#### 4. Correlation Requires Labeled Training Data
-
-| Need | Correlation AI | Causal AI (Ours) |
-|------|---------------|------------------|
-| Labeled data (breach/no-breach) | **Required** — thousands of examples | **Not required** — works from domain knowledge |
-| Time to produce results | After months of data collection + training | Immediately — from first scan |
-| Cold start problem | Severe — useless without training data | None — mechanisms are encoded from day one |
-| Transfer to new organization | Must retrain on their data | Works immediately (mechanisms are universal) |
-
-#### 5. The Federated Hierarchy Adds More
-
-Beyond basic causal reasoning, our FEDERATED architecture adds:
+Correlation models typically use vulnerability counts as features. Our system uses severity-weighted posture:
 
 ```
-Traditional ML Pipeline:           Our Federated SCM:
-─────────────────────────          ─────────────────────────
-Features → Model → Score           Sub-graph → Edge nodes → Master → Risk
-                                    
-One monolithic model                Each layer reasons INDEPENDENTLY
-Can't explain which input           Layer contributions quantified:
-caused which output                 "SAST: 40%, DAST: 35%, Repo: 25%"
-                                    
-One-shot prediction                 Multi-level intervention:
-"Risk = High"                       "Fix SAST critical vulns → risk drops 30%"
-                                    "Harden architecture → risk drops 20%"
-                                    
-No composability                    Add new layer (e.g., Cloud IaC) →
-Retrain entire model                just add a new sub-graph
+Correlation approach: 10 Medium + 1 Critical = 11 features (equally weighted in training)
+Our approach:         10 Medium (weight 4.0) + 1 Critical (weight 1.0) = deficit 5.0
+                      Critical matters MORE because it represents complete control failure
+                      
+Result: Our system correctly identifies that one Critical auth bypass is worse
+        than ten Medium informational findings — without needing training data to learn this.
 ```
+
+#### 3. Cross-Layer Effect Prediction (Impossible with Correlation)
+
+A correlation model processes each finding independently. It cannot predict:
+
+> "Fixing input validation in code (SAST layer) will also reduce the attack surface at runtime (DAST layer) by strength 0.5"
+
+Our cross-layer dependency rules make this prediction explicit:
+
+| Trigger (fixed) | Cross-layer Effect | Strength |
+|---|---|---|
+| Code auth posture improves | Runtime auth enforcement improves | 0.7 |
+| Code validation improves | Runtime attack surface decreases | 0.5 |
+| Architecture adds defense layers | Runtime attack surface decreases | 0.6 |
+
+This means a single code fix can be correctly valued for its TOTAL impact across layers — something no correlation model can compute.
+
+#### 4. Sequenced Roadmap (vs. Flat Priority List)
+
+| Correlation AI Output | CausalTM v2 Output |
+|---|---|
+| "Fix these 23 vulnerabilities in this order: #1, #2, #3..." | "Step 1: Reduce topology exposure (Repo fix) — this also reduces DAST attack surface via cross-layer rule. Step 2: Add input validation (SAST fix) — this further reduces attack surface. Step 3: Add defense-in-depth..." |
+| Each fix evaluated in isolation | Each fix evaluated in context of what's already been fixed |
+| No awareness that fix #5 becomes unnecessary if fix #2 is done | Explicitly tracks: "Step 2's cross-layer effect eliminates the need for Step 5" |
+
+#### 5. Graceful Handling of Missing Data
+
+| Situation | Correlation AI | CausalTM v2 |
+|---|---|---|
+| No DAST scan available | Model expects all features → degrades or fails | DAST edge nodes exist with value=0, strength=0 (not observed). System works with SAST + Repo only. Can still answer: "What WOULD risk be if DAST found issues?" |
+| New project, no history | Cannot predict (cold start) | Computes posture from current scan immediately |
+| One layer has no findings | Feature columns are zero → model confused | That layer's posture = 1.0 (no gaps found = secure posture). Other layers still contribute. |
 
 ### Summary: When Is Each Better?
 
-| Scenario | Correlation AI Wins | Causal AI Wins |
+| Scenario | Correlation AI Wins | CausalTM v2 Wins |
 |----------|--------------------|--------------------|
-| Large historical dataset available | ✓ (can learn subtle patterns) | |
-| Novel application, no history | | ✓ (works from mechanisms) |
-| Need to explain WHY a score was given | | ✓ (full causal chain) |
-| Need to recommend specific interventions | | ✓ (counterfactuals) |
-| Anomaly detection (unusual patterns) | ✓ (statistical outlier detection) | |
-| Compliance reporting (need audit trail) | | ✓ (deterministic, auditable) |
-| Real-time streaming data | ✓ (fast inference) | |
-| Strategic planning (where to invest?) | | ✓ (quantified intervention impact) |
-
-**For threat modeling specifically:** Causal AI is better because threat modeling is fundamentally about MECHANISMS (how attacks work) and DECISIONS (where to invest in security). Correlation-based models are better for anomaly detection and behavioral analytics — different problems.
+| Large historical dataset, need statistical patterns | ✓ | |
+| Novel application, no history | | ✓ |
+| Need to explain WHY a threat exists | | ✓ |
+| Need sequenced remediation with cross-layer awareness | | ✓ |
+| Anomaly detection (unusual runtime behaviour) | ✓ | |
+| Architecture-level STRIDE threat identification | | ✓ |
+| Real-time streaming data classification | ✓ | |
+| Strategic planning ("where should we invest?") | | ✓ |
+| Compliance (need deterministic, auditable reasoning) | | ✓ |
 
 ---
 
 ## Question 2: Does This Avoid Data Dependency and Drift Problems?
 
-### What Are These Problems in Correlation-Based AI?
+### Data Dependency: ELIMINATED for Core Reasoning
 
-**Data Dependency:** The model is only as good as its training data. If you don't have enough labeled examples of a specific attack type, the model is blind to it.
-
-**Data Drift:** The real world changes over time. New attack techniques emerge, new technologies are adopted, threat landscapes evolve. A model trained on 2023 data becomes less accurate in 2025 because the patterns have shifted.
-
-### How Our Federated Causal Approach Addresses Both
-
-#### Data Dependency: ELIMINATED for Core Reasoning
-
-| Problem | Correlation AI | Federated Causal AI |
+| Problem | Correlation AI | CausalTM v2 |
 |---------|---------------|---------------------|
-| "Never seen CWE-1234 before" | Can't classify → unknown risk | Maps via mechanism: CWE-1234 → known consequence type → known impact |
-| "No breach history for this app" | No labels → can't train → can't predict | Doesn't need breach history: mechanisms are universal |
-| "Only 3 examples of this vuln type" | Insufficient data → unreliable prediction | 1 instance is enough: if mechanism exists, threat exists |
-| "New technology stack" | No training data → retrain from scratch | Detectors find components → mechanisms still apply |
+| "Never seen CWE-1234 before" | Can't classify → unknown risk | Classified by keyword if CWE unknown; maps to posture type (auth/crypto/validation/logging) |
+| "No breach history for this app" | No labels → can't train → can't predict | Doesn't need history: posture computed from current scan immediately |
+| "Only 1 finding of this type" | Statistically insignificant → ignored | 1 Critical finding brings posture down by 33% (severity-weighted — one finding CAN matter) |
+| "New technology stack" | Retrain on new features | Detectors find manifests → same posture calculation applies |
+| "No DAST scan performed" | Missing features → model breaks | DAST edge nodes marked "not observed" → other layers still work → counterfactual "what if DAST found X?" still answerable |
 
-**Why?** Because our edges encode MECHANISMS, not CORRELATIONS. A mechanism is true regardless of sample size:
+**Why?** Because our system computes POSTURE from whatever evidence is available. Posture is:
+- **Presence-based:** "Do auth controls exist here? Yes/No → posture score"
+- **Severity-weighted:** "How bad are the gaps that DO exist?"
+- **Not count-dependent:** One Critical gap matters more than ten Low gaps
 
-```
-"SQL injection enables unauthorized data access"
+A correlation model needs VOLUME of data to find patterns. We need CURRENT STATE to assess posture.
 
-This is true whether you've seen it 1 time or 10,000 times.
-A correlation model needs 10,000 examples to learn this with confidence.
-We encode it once and it works forever.
-```
+### Data Drift: SIGNIFICANTLY REDUCED
 
-#### Data Drift: SIGNIFICANTLY REDUCED (Not Fully Eliminated)
-
-| Drift Type | Correlation AI Impact | Federated Causal AI Impact |
+| Drift Type | Correlation AI Impact | CausalTM v2 Impact |
 |-----------|----------------------|---------------------------|
-| **New attack techniques** | Model misses them until retrained | Covered IF mechanism maps to known consequence type; blind only if entirely new mechanism class |
-| **New technology stacks** | Features change → model degrades | Add new detector → sub-graph structures adapt → master still works |
-| **Changing threat landscape** | Statistical patterns shift → accuracy drops | Mechanisms don't change (SQLi still causes data breach); only edge WEIGHTS might need updating |
-| **Organizational changes** | Model trained on old org doesn't transfer | Architecture sub-graph rebuilds automatically from current repo |
+| **New attack techniques** | Model misses them until retrained | If the attack exploits an auth gap → auth posture already reflects the architectural weakness, regardless of whether this specific technique existed when rules were written |
+| **New SAST tool version** | Features change → retrain | Only SAST sub-DAG ingests new format. Edge nodes (posture scores) stay the same interface. Master DAG unaffected. |
+| **New technology stack** | Retrain entirely | Add new architecture detector → Repo sub-DAG produces same 4 edge nodes. Everything else works. |
+| **Changing severity standards** | Model learned old standards | Update severity_weights dict: `{Critical: 1.0, High: 0.7, Medium: 0.4, Low: 0.2}`. One line change, no retraining. |
+| **Organisation changes** | Model trained on old org | Repo sub-DAG rebuilds from current infrastructure files automatically. |
 
-**What DOES drift in our system (honest answer):**
+**What DOES drift in our system (honest):**
+- Severity weight calibration (`max_deficit = 3.0`) — may need tuning if typical finding distributions change
+- Keyword classification list — new rule naming patterns may not match existing keywords
+- Cross-layer rule strengths — the 0.7 strength for "code auth → runtime auth" is expert-specified
 
-- **Edge weights** may become stale if threat severity distributions change significantly
-- **CWE → Impact mappings** need updates when new CWE classes emerge
-- **Detection rules** (STRIDE YAML) need updates for new patterns
+But these are **transparent, human-readable parameters** in Python/YAML — not opaque model weights requiring GPU retraining.
 
-But notice: **the STRUCTURE (DAG topology) doesn't drift.** Only parameter values do. And those are in human-readable YAML files, not opaque model weights.
-
-#### The Federated Architecture Adds Drift Resilience
+### The Federated Architecture Adds Drift Resilience
 
 ```
 Correlation AI when drift occurs:
-  ENTIRE model is suspect → retrain everything → weeks of work
+  ENTIRE model is suspect → retrain everything → weeks of GPU time + data collection
 
-Federated Causal when drift occurs:
-  Only ONE sub-graph is affected:
-  - New SAST tool version? → Update SAST sub-graph only
-  - New attack surface? → Update DAST sub-graph only
-  - Architecture changes? → Repo sub-graph auto-rebuilds from code
+CausalTM v2 when drift occurs:
+  Only the AFFECTED sub-DAG needs adjustment:
+  - New SAST tool? → Only sast_subdag.py classification logic updates
+  - New architecture pattern? → Only repo_subdag.py detection logic updates
+  - New STRIDE threshold? → One number in stride_layer.py
   
-  Master DAG and other sub-graphs are UNAFFECTED
-  because edge node INTERFACES are stable.
+  Master DAG structure: UNCHANGED (cross-layer rules are architectural truths)
+  Other sub-DAGs: UNCHANGED (independent by design)
+  STRIDE evaluation: UNCHANGED (architectural threats don't shift with tooling)
 ```
-
-This is the power of modularity: drift is LOCALIZED to the affected layer.
-
-### Data Dependency Comparison Table
-
-| What You Need | Correlation AI | Federated Causal AI |
-|---|---|---|
-| Labeled breach/incident data | **Must have** (hundreds to thousands) | **Don't need** (mechanisms are pre-encoded) |
-| Historical scan results | **Must have** (for pattern learning) | **Nice to have** (for weight tuning, not required) |
-| Current SAST report | Input feature | Input to SAST sub-graph |
-| Current DAST report | Input feature | Input to DAST sub-graph |
-| Current code repo | Feature extraction | Architecture detection |
-| Domain expertise | Not explicit (implicit in labels) | **Explicit** (encoded in rules + CWE mappings) |
-| Training time | Hours to days | **Zero** (no training step) |
-| Re-training schedule | Every 3-6 months | **Never** (update rules incrementally) |
 
 ---
 
 ## Question 3: Is It More Reusable Than Traditional Approaches?
 
-### What "Reusable" Means Here
+### Reusability at Three Levels
 
-Reusable = Can the same system work across:
-- Different organizations?
-- Different technology stacks?
-- Different project sizes?
-- Different security maturity levels?
-- Adding new data sources without rebuilding?
+#### Level 1: Across Organisations (Zero Adaptation)
 
-### Reusability Comparison
+| Scenario | Correlation AI | CausalTM v2 |
+|---|---|---|
+| Deploy at Company A | Retrain on their vulnerability history (3-6 months) | Run immediately: ingest their SARIF + ZAP XML + repo. Same posture calculation. Same STRIDE evaluation. |
+| Deploy at Company B (different industry) | Retrain again (different patterns) | Same engine. Different findings → different posture scores → different STRIDE threats. No adaptation needed. |
+| Different security maturity | Model tuned to one maturity level | Lower maturity = more gaps = lower posture = more STRIDE threats. Automatic. |
 
-| Dimension | Correlation AI | Federated Causal AI |
-|-----------|---------------|---------------------|
-| **Cross-organization** | Must retrain per org (different patterns) | Works immediately (mechanisms are universal) |
-| **Cross-technology** | Must retrain per stack (different features) | Works immediately (detectors are stack-agnostic via manifests) |
-| **Cross-scale** | May need architecture changes for larger systems | Scales naturally (sub-graphs stay bounded by their domain) |
-| **Adding new data source** | Retrain entire model with new features | Add a new sub-graph → define edge nodes → plug into master |
-| **Partial data** | Model degrades significantly with missing features | Graceful degradation: sub-graph produces no edge nodes → master uses available layers |
-| **Explainability reuse** | Explanations are model-specific | Causal explanations are universal ("X causes Y because Z") |
+#### Level 2: Across Technology Stacks (Same Engine)
 
-### The Federated Architecture is DESIGNED for Reusability
+CausalTM v2 is technology-agnostic at the posture level:
 
 ```
-SCENARIO: Add Terraform/Cloud IaC as a new data source
+Java app with Spring Security:
+  SAST finds CWE-89 (injection) → posture_type = "validation" → validation_posture affected
+  
+Node.js app with Express:
+  SAST finds CWE-89 (injection) → posture_type = "validation" → validation_posture affected
+  
+Same posture calculation. Same STRIDE evaluation. Same roadmap logic.
+The TECHNOLOGY doesn't matter — the POSTURE does.
+```
+
+#### Level 3: Adding New Data Sources (Modular Extension)
+
+```
+SCENARIO: Add Terraform/Cloud IaC analysis
 
 Correlation AI:
-  1. Define new features from Terraform files
-  2. Collect labeled training data with Terraform + breach outcomes
-  3. Retrain entire model
-  4. Validate on test set
+  1. Define new features from .tf files
+  2. Collect thousands of labeled examples (Terraform configs + breach outcomes)
+  3. Retrain entire model with new feature columns
+  4. Validate on holdout set
   5. Deploy new model version
-  Time: 3-6 months
+  Effort: 3-6 months
 
-Federated Causal AI:
-  1. Create InfraSubGraph(CausalSubGraph):   ← new sub-graph class
-  2. Define edge nodes:
-     - infra.encryption_at_rest
-     - infra.network_isolation
-     - infra.iam_least_privilege
-  3. Add to master DAG intermediate node definitions
-  4. Deploy
-  Time: 1-2 weeks (no data collection, no training)
+CausalTM v2:
+  1. Create new sub-DAG: terraform_subdag.py
+  2. Define edge nodes: iam_posture, network_isolation_posture, encryption_at_rest_posture
+  3. Define cross-layer rules: "iam_posture improves → auth posture improves"
+  4. Plug into Master DAG (edge node interface is standard)
+  Effort: 1-2 weeks. No retraining. No historical data needed.
 ```
 
-### Reusability at Each Level
+### The Posture-Based Edge Node Interface Enables Reusability
 
-#### Sub-Graph Level (Tactical)
-
-Each sub-graph is independently reusable:
-- **SAST sub-graph** works with ANY SARIF-producing tool (Coverity, Semgrep, CodeQL, Bandit)
-- **DAST sub-graph** works with ANY DAST tool (ZAP, Netsparker, Nuclei)
-- **Repo sub-graph** works with ANY repo containing standard manifests
-
-Switching from Coverity to Semgrep? The SAST sub-graph doesn't care — both produce SARIF.
-
-#### Master DAG Level (Strategic)
-
-The master DAG's causal structure is UNIVERSAL across organizations:
-- "Exploitability + Exposure + Impact = Risk" is always true
-- "Mitigation posture reduces effective risk" is always true
-- "DAST confirmation elevates SAST findings" is always true
-
-You don't need to retune this per organization.
-
-#### Edge Node Interface (The Key to Reusability)
-
-The edge node interface is what makes the system composable:
+The key to reusability is the **edge node contract**:
 
 ```python
-class EdgeNode:
-    id: str        # Stable identifier (e.g., "sast.vulnerability_density")
-    value: float   # 0.0 - 1.0 normalized
-    layer: str     # Which sub-graph produced it
-    causal_strength: float  # How strongly it influences downstream
+class ArchitecturalEdgeNode:
+    id: str           # Standard naming: "layer.posture_name"
+    value: float      # Always 0.0 to 1.0 (normalised posture)
+    causal_strength: float  # How strongly this influences STRIDE
+    stride_relevance: list[str]  # Which STRIDE categories this affects
+    observed: bool    # Whether this layer actually ran
 ```
 
-This is a CONTRACT. Any sub-graph that produces EdgeNodes with this interface can participate in the master DAG. The master doesn't care HOW the value was computed — only that it's normalized and meaningful.
+ANY sub-DAG that produces conformant edge nodes can participate. The Master DAG and STRIDE layer don't care HOW the posture was computed — only that it's normalised and carries STRIDE relevance metadata. This is analogous to API contracts in microservices: stable interface, independent implementation.
 
-This is analogous to API contracts in microservices — the interface is stable even if the implementation changes.
+### Partial Data Tolerance
 
-### Composability Matrix
+```
+All three inputs available:
+  SAST (4 edge nodes) + DAST (4 edge nodes) + Repo (4 edge nodes) = full picture
 
-| Can I... | Correlation AI | Federated Causal AI |
-|----------|---------------|---------------------|
-| Use with a different SAST tool? | Retrain (different features) | **Yes** (same SARIF input) |
-| Use with no DAST data? | Model expects all features | **Yes** (DAST sub-graph produces zeros; master degrades gracefully) |
-| Add a new data source? | Retrain entire model | **Yes** (add sub-graph, define edge nodes) |
-| Use for a different language? | May need new features/retraining | **Yes** (detectors are language-agnostic) |
-| Transfer to a new organization? | Must retrain on their data | **Yes** (mechanisms are universal) |
-| Explain to auditors? | "The model says..." | **Yes** (full causal chain documentation) |
-| Update one rule without breaking others? | Risk of cascading effects | **Yes** (sub-graph isolation) |
-| Run without historical data? | **No** | **Yes** (works from first scan) |
+Only SAST + Repo (no DAST):
+  SAST (4 edge nodes) + DAST (4 edge nodes, all zero, not observed) + Repo (4 edge nodes)
+  = Partial picture, but STRIDE still evaluates from available posture
+  = Result is CONSERVATIVE (less confident) but still VALID
+
+Only Repo (no scans at all):
+  SAST (not observed) + DAST (not observed) + Repo (4 edge nodes from architecture)
+  = ARCHITECTURE-ONLY threat model — still identifies design-level STRIDE threats
+  = This is exactly what manual STRIDE does (no scans needed, just architecture review)
+```
 
 ---
 
@@ -299,45 +251,35 @@ This is analogous to API contracts in microservices — the interface is stable 
 
 ### 1. Is Federated Causal AI better than correlation-based AI?
 
-**Yes, for this problem domain.** Threat modeling is about mechanisms and decisions, not pattern matching. Causal AI gives you:
-- Counterfactual reasoning (what to fix)
-- Confounder awareness (what's inflating risk)
-- Mechanism-based reasoning (works without historical data)
-- Full auditability (explainable to regulators)
-
-Correlation AI is better for: anomaly detection, behavioral analytics, large-scale pattern mining — different problems.
+**Yes, for architectural threat modeling.** Correlation models count and rank vulnerabilities. CausalTM v2 assesses architectural security posture and identifies STRIDE threats from design gaps. The key differentiators:
+- Posture-based (not count-based) — aligns with what STRIDE actually evaluates
+- Cross-layer prediction — one fix's impact across all layers, predicted before applying
+- Sequenced roadmap — optimal fix order with cumulative effect tracking
+- Counterfactual reasoning — "what if?" questions answerable without historical data
 
 ### 2. Does it avoid data dependency and drift?
 
 **Largely yes.**
-- **Data dependency:** Eliminated for core reasoning (no training data needed). Domain knowledge is encoded explicitly, not learned implicitly.
-- **Data drift:** Significantly reduced because causal mechanisms are stable over time. Only weights and rule parameters may need updating. The federated architecture localizes drift to individual layers.
-
-**Honest caveat:** The system is dependent on the QUALITY of encoded domain knowledge (CWE mappings, STRIDE rules). But this is transparent and auditable, unlike a black-box model's implicit biases.
+- **Data dependency eliminated:** Posture computed from current scan state, not learned from history
+- **Drift localised:** Only affected sub-DAG needs adjustment; master structure is stable
+- **Parameters are transparent:** Severity weights, thresholds, and cross-layer strengths are human-readable numbers, not opaque model weights
+- **Honest caveat:** Calibration values (max_deficit, STRIDE thresholds) are expert-specified and may need empirical validation
 
 ### 3. Is it more reusable?
 
 **Significantly yes.**
-- Cross-organization: works without retraining
-- Cross-technology: detectors are stack-agnostic
-- Composable: add new data sources by adding sub-graphs
-- Gracefully degrades: missing layers don't break the system
-- Stable interfaces: edge node contracts decouple layers
-
-The federated architecture is specifically designed for reusability — each sub-graph is independent, the master DAG's structure is universal, and the edge node interface serves as a stable contract between components.
+- Cross-organisation: works immediately without adaptation (posture calculation is universal)
+- Cross-technology: same engine regardless of language or framework (posture is tech-agnostic)
+- Composable: new data sources added via new sub-DAGs with standard edge node interface
+- Gracefully degrades: missing layers don't break the system, just reduce confidence
+- Architecture-only mode: produces valid STRIDE threats even without SAST/DAST (same as manual TM)
 
 ---
 
 ## For the DBA Dissertation / Book
 
-This comparison is a natural chapter in your work:
+This comparison positions the contribution clearly:
 
-> **Chapter X: Theoretical Justification — Why Causal Over Correlational**
->
-> This chapter argues that cybersecurity risk assessment is fundamentally a causal reasoning problem (mechanisms of attack, chains of exploitation) rather than a statistical association problem (pattern co-occurrence). We demonstrate that Federated Structural Causal Models (FSCM) provide three key advantages for business decision-makers:
->
-> 1. **Actionability** — Counterfactual analysis directly answers "where should we invest?" rather than just "how risky are we?"
-> 2. **Robustness** — Mechanism-based reasoning avoids data dependency and drift, making the tool reliable in data-scarce environments typical of enterprise security
-> 3. **Composability** — The federated architecture allows organizations to incrementally adopt the system and integrate new data sources without rebuilding
+> "We do not claim that causal AI replaces machine learning universally. Rather, we demonstrate that for the specific problem of STRIDE-based architectural threat modeling — where the question is 'what can go wrong with this design?' rather than 'which vulnerabilities will be exploited?' — a posture-based Federated Structural Causal Model provides capabilities that correlation-based approaches structurally cannot: cross-layer effect prediction, sequenced remediation planning, and design-level threat identification independent of specific vulnerability existence."
 
-This positioning differentiates your work from both traditional threat modeling tools (PyTM, Microsoft TMT) AND machine learning approaches (EPSS, ML-based SAST).
+This is a defensible, nuanced claim that acknowledges ML's strengths in other domains while demonstrating clear superiority for THIS specific problem.
