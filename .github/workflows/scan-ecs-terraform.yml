@@ -63,7 +63,7 @@ jobs:
                       print(f'    - {r.get(\"ruleId\",\"?\")} [{r.get(\"level\",\"?\")}] {r.get(\"message\",{}).get(\"text\",\"\")[:80]}')
           "
 
-      - name: Run CausalTM evaluation
+      - name: Run CausalTM v2 evaluation
         run: python scripts/eval_ecs_terraform.py
 
       - name: Upload results
