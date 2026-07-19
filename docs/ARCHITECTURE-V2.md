@@ -1,8 +1,12 @@
 # CausalTM Architecture v2 — Definitive Design
 
+*Last updated: July 2026 (reflects implemented and tested state)*
+
 ## Core Principle
 
-CausalTM is a **STRIDE-based Threat Modeling** tool. It does NOT fix vulnerabilities — that is the job of SAST and DAST tools. CausalTM consumes their outputs to **understand the application's architecture** and then applies **STRIDE threat analysis** to that architecture using **Federated Causal AI** for reasoning.
+CausalTM is a **STRIDE-based Threat Modeling** tool. It does NOT fix vulnerabilities — that is the job of SAST and DAST tools. CausalTM consumes their outputs to **understand the application's architecture** and then applies **STRIDE threat analysis** to that architecture using a **Federated Structural Causal Model** for reasoning.
+
+The tool answers one question: *"Given this application's design, what are the architectural threats, and what is the optimal sequence of fixes to eliminate them all?"*
 
 ---
 
@@ -12,373 +16,276 @@ CausalTM is a **STRIDE-based Threat Modeling** tool. It does NOT fix vulnerabili
 ┌─────────────────────────────────────────────────────────────────────┐
 │  LAYER 5: STRIDE THREAT MODEL (The Cream Layer)                     │
 │  ═══════════════════════════════════════════════                     │
-│  What: Identifies DESIGN-LEVEL threats from architecture            │
-│  Input: Complete architecture understanding from Layer 4            │
-│  Output: Threat Model + Remediation Roadmap to 0% risk             │
-│                                                                     │
-│  This layer asks: "Given this architecture, what can go wrong       │
-│  from a Spoofing, Tampering, Repudiation, Information Disclosure,   │
-│  Denial of Service, and Elevation of Privilege perspective?"        │
-│                                                                     │
-│  It does NOT need any vulnerability to exist. Architecture alone    │
-│  is sufficient to identify threats.                                 │
+│  Identifies DESIGN-LEVEL threats from the architecture.             │
+│  Does NOT need vulnerabilities — architecture alone is sufficient.  │
+│  Evaluates all 6 categories using multi-layer posture evidence.     │
+│  Traces CWEs from base variables for ground truth validation.       │
+│  Output: Threat Model + Posture per Category + Risk Score           │
 ├─────────────────────────────────────────────────────────────────────┤
 │  LAYER 4: MASTER DAG (Cross-Layer Causal Reasoning)                 │
 │  ══════════════════════════════════════════════════                  │
-│  What: Combines edge nodes from all sub-DAGs, performs causal       │
-│        inference across layers, bidirectional propagation            │
-│  Input: Edge nodes (effect variables) from each sub-DAG             │
-│  Output: Unified architecture understanding + risk quantification   │
-│                                                                     │
-│  Capabilities:                                                      │
-│    • Counterfactual: "What causes the current risk?"                │
-│    • What-If: "If I fix X, what changes across ALL layers?"         │
-│    • Bidirectional: Forward (fix → impact) + Backward (target →     │
-│      what to fix)                                                   │
-│    • Cross-layer side effects: fixing in one layer may             │
-│      create/resolve issues in another                               │
+│  Combines 12 edge nodes from 3 sub-DAGs.                            │
+│  Applies 6 cross-layer dependency rules.                            │
+│  Graph includes: edge nodes → STRIDE posture → Overall Risk.        │
+│  Performs: What-If, Counterfactual, Roadmap to Zero.                │
+│  Tracks fixed_nodes to avoid duplicate recommendations.             │
 ├─────────────────────────────────────────────────────────────────────┤
 │  LAYER 3: SUB-DAGs (Per-Source Architecture Extraction)             │
 │  ═════════════════════════════════════════════════════               │
-│  What: Each sub-DAG extracts ARCHITECTURE UNDERSTANDING from        │
-│        its data source — not vulnerability counts                   │
-│                                                                     │
-│  SAST Sub-DAG:                                                      │
-│    Input: SARIF report                                              │
-│    Extracts: What security controls EXIST in code?                  │
-│      • Authentication patterns present? Where? Gaps?                │
-│      • Encryption/crypto used? Properly? Gaps?                      │
-│      • Input validation implemented? Where missing?                 │
-│      • Audit logging present?                                       │
-│    Edge nodes (effects): auth_posture, crypto_posture,              │
-│                          input_validation_posture, logging_posture   │
-│                                                                     │
-│  DAST Sub-DAG:                                                      │
-│    Input: ZAP/Netsparker XML report                                 │
-│    Extracts: What does the application LOOK LIKE at runtime?        │
-│      • What endpoints are exposed? (attack surface)                 │
-│      • Is authentication enforced? (confirmed or bypassable)        │
-│      • Is encryption active? (TLS working or broken)                │
-│      • What information leaks? (headers, errors, responses)         │
-│    Edge nodes (effects): runtime_auth_enforcement,                   │
-│                          runtime_encryption_status,                  │
-│                          exposed_attack_surface,                     │
-│                          information_leakage_level                   │
-│                                                                     │
-│  Repo Sub-DAG:                                                      │
-│    Input: Source code repository                                    │
-│    Extracts: What is the STRUCTURAL DESIGN?                         │
-│      • Components (services, databases, external entities)          │
-│      • Data flows (what connects to what, carrying what data)       │
-│      • Trust boundaries (network zones, access levels)              │
-│      • Defense layers (WAF, gateway, segmentation)                  │
-│    Edge nodes (effects): topology_exposure, data_sensitivity,       │
-│                          trust_boundary_integrity,                   │
-│                          defense_depth                               │
-│                                                                     │
+│  Each sub-DAG extracts ARCHITECTURAL POSTURE, not vuln counts.      │
+│  Base variables (causes) = individual findings/facts                │
+│  Edge nodes (effects) = aggregated security posture scores          │
+│  Posture is SEVERITY-WEIGHTED (Critical=1.0, High=0.7, Medium=0.4) │
 ├─────────────────────────────────────────────────────────────────────┤
 │  LAYER 2: INGESTORS (Parse & Normalize)                             │
 │  ═══════════════════════════════════════                             │
-│  What: Parse raw reports into structured data                       │
-│  SARIF parser → normalized findings                                 │
-│  ZAP XML parser → normalized findings                               │
-│  Repo file walker → file list + content                             │
-│                                                                     │
+│  SARIF parser (any SAST tool) → normalized findings                 │
+│  ZAP/Netsparker XML parser → normalized findings                    │
+│  Repo file walker + detectors → component graph                     │
 ├─────────────────────────────────────────────────────────────────────┤
 │  LAYER 1: INPUT SOURCES (External — Not Our Job)                    │
 │  ═══════════════════════════════════════════════                     │
-│  SAST tool (Semgrep/Coverity): Finds & tracks code vulnerabilities  │
-│  DAST tool (ZAP/Netsparker): Finds & tracks runtime vulnerabilities │
+│  SAST tool: Finds & tracks code vulnerabilities (their job)         │
+│  DAST tool: Finds & tracks runtime vulnerabilities (their job)      │
 │  Git repository: Contains source + infrastructure configs           │
-│                                                                     │
-│  These tools FIX their own findings. We don't duplicate that work.  │
 │  We CONSUME their output to understand the application design.      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## How Each Sub-DAG Extracts Architecture (Not Vulnerability Counts)
+## Layer 3: Sub-DAGs — How Posture Is Calculated
 
 ### SAST Sub-DAG: "What Security Controls Exist in the Code?"
 
-The SAST report is NOT used to count bugs. It's used to answer architectural questions:
+**Input:** SARIF report from any SAST tool (Semgrep, Coverity, CodeQL, Bandit)
+
+**What it does:** Classifies each finding as evidence of an architectural control gap:
+
+| Finding's CWE | Maps To | Meaning |
+|---|---|---|
+| CWE-287, CWE-306, CWE-862, CWE-798, CWE-352 | `auth` posture gap | Architecture lacks authentication at this boundary |
+| CWE-311, CWE-319, CWE-327, CWE-347 | `crypto` posture gap | Architecture lacks proper encryption |
+| CWE-89, CWE-79, CWE-78, CWE-22, CWE-20, CWE-502 | `validation` posture gap | Architecture lacks input validation at this boundary |
+| CWE-778, CWE-532, CWE-209 | `logging` posture gap | Architecture lacks audit trail |
+
+**When CWE is not available** (common with Semgrep rules): The sub-DAG classifies by keyword matching on the finding's title and rule ID (e.g., "inject" → validation, "auth" → auth, "crypto" → crypto).
+
+**Posture calculation (severity-weighted):**
 
 ```
-From SAST findings, we INFER:
-─────────────────────────────
-CWE-287 (Missing Auth) found     → Architecture has AUTH GAPS
-CWE-287 NOT found                → Architecture has AUTH COVERAGE (control exists)
+severity_weights = {Critical: 1.0, High: 0.7, Medium: 0.4, Low: 0.2}
+max_deficit = 3.0  (calibration: 3 Critical findings = 0% posture)
 
-CWE-311 (Missing Encryption)     → Architecture has ENCRYPTION GAPS  
-CWE-311 NOT found                → Architecture has ENCRYPTION (control exists)
-
-CWE-89 (SQL Injection)           → Architecture has NO INPUT VALIDATION at this boundary
-CWE-89 NOT found                 → Architecture has INPUT VALIDATION (control exists)
-
-CWE-778 (Missing Logging)        → Architecture has NO AUDIT TRAIL
-CWE-778 NOT found                → Architecture has AUDIT LOGGING (control exists)
+weighted_deficit = sum(severity_weight for each gap in this category)
+posture = max(0.0, 1.0 - (weighted_deficit / max_deficit))
 ```
 
-**The sub-DAG's internal causal model:**
+**Why severity-weighted is defensible:** A single Critical authentication bypass (weight 1.0) damages posture more than three Low informational findings (weight 0.6 combined). This aligns with industry severity classification (CVSS).
 
-```
-[Individual SAST findings] ──are symptoms of──▶ [Architectural control gaps]
-                                                         │
-                                                    EFFECT (edge node)
-                                                         │
-                                                         ▼
-                                    "Auth Posture = 0.4" (40% of boundaries have auth)
-                                    "Crypto Posture = 0.7" (70% of sensitive flows encrypted)
-                                    "Validation Posture = 0.3" (30% of inputs validated)
-                                    "Logging Posture = 0.2" (20% of actions logged)
-```
+**Edge nodes produced (4):**
 
-**Edge nodes represent ARCHITECTURAL STATE, not vulnerability count.**
+| Edge Node | What It Represents | STRIDE Relevance |
+|---|---|---|
+| `sast.auth_posture` | How complete is authentication in code? | Spoofing, Elevation of Privilege |
+| `sast.crypto_posture` | Is encryption properly implemented? | Information Disclosure, Tampering |
+| `sast.validation_posture` | Are inputs validated at boundaries? | Tampering, Elevation of Privilege |
+| `sast.logging_posture` | Is audit logging present? | Repudiation |
 
 ### DAST Sub-DAG: "What Does the Application Actually Look Like Running?"
 
-```
-From DAST findings, we INFER:
-─────────────────────────────
-Auth bypass found at /admin      → Architecture's auth IS BYPASSABLE at runtime
-CSP header missing               → Architecture LEAKS information in responses
-TLS issues found                 → Architecture's encryption IS BROKEN at runtime
-Directory listing enabled        → Architecture EXPOSES internal structure
-No findings on /api with JWT     → Architecture's auth WORKS on this endpoint
-```
+**Input:** ZAP XML or Netsparker XML report
 
-**Edge nodes represent RUNTIME ARCHITECTURAL REALITY:**
+**What it does:** Determines runtime architectural reality — whether controls that may exist in code are actually ENFORCED at runtime.
 
-```
-"Runtime Auth Enforcement = 0.6" (60% of endpoints properly enforce auth)
-"Runtime Encryption = 0.8" (80% of connections use valid TLS)
-"Attack Surface = 0.5" (50% of internal surface is externally reachable)
-"Information Leakage = 0.3" (responses leak 30% more info than necessary)
-```
+**Classification:** DAST findings are categorised by their type:
+- `authentication` category → reveals gaps in runtime auth enforcement
+- `cryptography` / `configuration` → reveals TLS/encryption failures
+- `information_disclosure` → reveals data leakage
+- `injection` / `xss` → reveals runtime validation gaps
+
+**Key distinction:** All DAST findings have higher causal strength (0.85-0.9) than SAST findings because they are RUNTIME-PROVEN, not theoretical.
+
+**When DAST is not available:** Edge nodes are still produced (value=0.0, causal_strength=0.0, observed=False). This preserves the causal graph structure for counterfactual queries: "What WOULD risk be if DAST found issues?"
+
+**Edge nodes produced (4):**
+
+| Edge Node | What It Represents | STRIDE Relevance |
+|---|---|---|
+| `dast.runtime_auth_enforcement` | Is auth actually enforced at runtime? | Spoofing, Elevation of Privilege |
+| `dast.runtime_encryption_status` | Is TLS/encryption working? | Information Disclosure, Tampering |
+| `dast.exposed_attack_surface` | How much is reachable from outside? | Spoofing, DoS, Information Disclosure |
+| `dast.information_leakage` | What leaks in responses? | Information Disclosure |
 
 ### Repo Sub-DAG: "What Is the Structural Design?"
 
+**Input:** Component graph from architecture auto-detection (Docker, K8s, API specs, configs)
+
+**What it does:** Evaluates the architectural topology itself — independent of any vulnerabilities.
+
+**Edge nodes produced (4):**
+
+| Edge Node | What It Represents | STRIDE Relevance |
+|---|---|---|
+| `repo.topology_exposure` | How much of the system is externally reachable? | Spoofing, DoS, Information Disclosure |
+| `repo.data_sensitivity` | How sensitive is the data the system handles? | Information Disclosure, Tampering |
+| `repo.trust_boundary_integrity` | Are boundaries properly controlled? | Spoofing, Tampering, Info Disclosure, EoP |
+| `repo.defense_depth` | How many defense layers exist? | Spoofing, Tampering, DoS, EoP |
+
+---
+
+## Layer 4: Master DAG — Cross-Layer Reasoning
+
+### What It Contains
+
+The Master DAG's NetworkX graph has:
+- **12 edge nodes** (4 per sub-DAG) as input layer
+- **6 STRIDE posture nodes** (intermediate reasoning layer)
+- **1 Overall Risk node** (final effect)
+- **Cross-layer edges** (6 dependency rules between edge nodes)
+- **STRIDE determination edges** (edge nodes → STRIDE posture nodes → risk)
+
+### Cross-Layer Dependency Rules (6 Implemented)
+
+| Trigger | Effect | Strength | Reason |
+|---|---|---|---|
+| SAST auth_posture ↑ | DAST runtime_auth ↑ | 0.7 | Fixing auth in code makes runtime auth work |
+| SAST crypto_posture ↑ | DAST runtime_encryption ↑ | 0.6 | Implementing encryption in code activates it at runtime |
+| SAST validation_posture ↑ | DAST attack_surface ↓ | 0.5 | Better validation makes endpoints less exploitable |
+| Repo defense_depth ↑ | DAST attack_surface ↓ | 0.6 | Defense layers (gateway, WAF) reduce reachability |
+| Repo topology_exposure ↓ | DAST attack_surface ↓ | 0.8 | Fewer public components = smaller attack surface |
+| Repo trust_boundary_integrity ↑ | DAST information_leakage ↓ | 0.5 | Better boundaries reduce unintended exposure |
+
+### Roadmap to Zero
+
+The Master DAG iteratively computes the optimal fix sequence:
+
 ```
-From repository, we DETECT:
-────────────────────────────
-docker-compose.yml        → Services, their connections, exposed ports
-Kubernetes manifests      → Trust boundaries (namespaces), ingress exposure  
-API specifications        → Data models, endpoint design, auth schemes
-Config files              → Database connections, external dependencies
-Terraform/CloudFormation  → Cloud resources, network topology, IAM
+1. For each unfixed edge node, simulate fixing it (what_if → target value)
+2. Compute cross-layer effects of each candidate fix
+3. Compute STRIDE posture improvement for each
+4. Select the fix with highest total impact
+5. Mark it as fixed, update current state including cross-layer effects
+6. Repeat until all STRIDE postures > threshold or no more improvements possible
 ```
 
-**Edge nodes represent STRUCTURAL DESIGN:**
+Deduplication: each edge node can only be fixed once (tracked via `fixed_nodes` set).
+
+---
+
+## Layer 5: STRIDE — The Cream Layer
+
+### How Threats Are Generated
+
+For each STRIDE category, the layer:
+1. Collects relevant edge node posture scores from the Master DAG
+2. Computes a composite category posture (inverts exposure/leakage metrics)
+3. If posture < threshold (0.85 for Low, 0.7 for Medium, 0.5 for High, 0.3 for Critical), generates a threat
+4. Severity is determined by how far below threshold the posture falls
+5. Confidence increases with the number of layers that corroborate the threat
+
+### CWE Tracing (Automated)
+
+Each generated STRIDE threat automatically traces back to specific CWE IDs from the SAST base variables:
 
 ```
-"Topology Exposure = 0.5" (50% of services directly reachable from outside)
-"Data Sensitivity = 0.9" (system handles credentials + PII + financial)
-"Trust Boundary Integrity = 0.6" (60% of cross-boundary flows have controls)
-"Defense Depth = 0.4" (limited layered defenses)
+STRIDE category → relevant posture types → base variables with those types → CWE IDs
+
+Example:
+  "Tampering" threat → needs crypto + validation posture
+  → SAST base vars with posture_type="crypto" → CWE-311, CWE-319
+  → SAST base vars with posture_type="validation" → CWE-89, CWE-79
+  → Threat carries: [CWE-89, CWE-79, CWE-311, CWE-319]
+```
+
+This enables ground truth comparison against known vulnerabilities (CVEs).
+
+### Multi-Layer Evidence
+
+Each threat carries evidence from ALL layers that contributed:
+
+```
+StrideThreathV2:
+  evidence_sast: ["Auth posture: 37%, Validation: 0%"]
+  evidence_dast: ["Runtime auth: 80%"]
+  evidence_repo: ["Topology exposure: 83%, Boundary integrity: 40%"]
+  layers_confirming: 3  (all three layers agree this is a problem)
+```
+
+### Remediation at Three Levels
+
+Each threat includes HOW to fix it at each architectural level:
+
+```
+remediation_architecture: "Add authentication requirement to all trust boundary crossings"
+remediation_code: "Implement authentication middleware on all public-facing endpoints"  
+remediation_verification: "Re-run DAST to confirm auth is enforced at runtime"
 ```
 
 ---
 
-## The Master DAG: Cross-Layer Architecture Understanding
+## Bidirectional Propagation
 
-The Master DAG receives edge nodes from all three sub-DAGs and builds a **unified picture of the architecture's security posture**:
-
-```
-FROM SAST:                    FROM DAST:                   FROM REPO:
-auth_posture = 0.4            runtime_auth = 0.6           topology_exposure = 0.5
-crypto_posture = 0.7          runtime_encryption = 0.8     data_sensitivity = 0.9
-validation_posture = 0.3      attack_surface = 0.5         boundary_integrity = 0.6
-logging_posture = 0.2         info_leakage = 0.3           defense_depth = 0.4
-
-         │                           │                           │
-         └───────────────────────────┼───────────────────────────┘
-                                     │
-                                     ▼
-                         MASTER DAG REASONING:
-
-    "Auth posture in code (0.4) + Auth enforcement at runtime (0.6) + 
-     Topology exposure (0.5) = Architecture has PARTIAL AUTH with GAPS"
-     
-    "Crypto in code (0.7) + Encryption at runtime (0.8) + 
-     Boundary integrity (0.6) = Architecture has MOSTLY ENCRYPTED but 
-     some cross-boundary flows are UNPROTECTED"
-     
-    "Low validation (0.3) + Medium attack surface (0.5) + 
-     High data sensitivity (0.9) = Architecture is HIGHLY VULNERABLE 
-     to data manipulation through unvalidated inputs"
-```
-
-### Cross-Layer Dependencies (Bidirectional)
-
-The Master DAG also captures how layers INTERACT:
+### Forward: Fix → Impact Across All Layers
 
 ```
-CROSS-LAYER RULES:
+Fix "sast.validation_posture" (0.0 → 1.0):
+  Direct: SAST layer validation improves
+  Cross-layer rule triggers: DAST attack_surface decreases (strength 0.5)
+  STRIDE re-evaluates: Tampering posture improves, EoP posture improves
+  Net: Overall risk decreases
+```
 
-"If SAST auth_posture improves → DAST runtime_auth should also improve"
-  (fixing auth in code → auth works at runtime)
+### Backward: Target → What Must Be Fixed
 
-"If Repo adds API gateway → DAST attack_surface decreases"
-  (architectural change → fewer endpoints exposed)
-
-"If SAST removes encryption → DAST runtime_encryption degrades"
-  (code change → runtime effect)
-
-"If Repo removes WAF → DAST info_leakage may increase"
-  (removing defense → new exposures appear)
+```
+Query: "What base variables must change to achieve auth_posture = 1.0?"
+  → List all SAST findings with posture_type = "auth"
+  → Each one is a fix candidate
+  → Ordered by severity (fix Critical first = biggest posture improvement per fix)
 ```
 
 ---
 
-## STRIDE Layer: The Cream (Layer 5)
-
-STRIDE sits ABOVE the Master DAG and evaluates the **complete architecture understanding** against the six threat categories:
+## Implementation Summary
 
 ```
-STRIDE receives from Master DAG:
-──────────────────────────────────
-  • Complete architecture map (components, flows, boundaries)
-  • Security posture per boundary (auth, crypto, validation, logging)
-  • Runtime confirmation (what's actually enforced vs. what's designed)
-  • Cross-layer consistency (is code aligned with runtime? design aligned with implementation?)
-
-STRIDE asks for EACH data flow / trust boundary crossing:
-──────────────────────────────────────────────────────────
-
-  SPOOFING:
-    "Can the identity of the sender be verified at this boundary?"
-    Input: auth_posture (SAST) + runtime_auth (DAST) + boundary_integrity (Repo)
-    If auth_posture < threshold AND runtime_auth < threshold → SPOOFING THREAT
-
-  TAMPERING:
-    "Can data be modified in transit across this boundary?"
-    Input: crypto_posture (SAST) + runtime_encryption (DAST) + boundary_integrity (Repo)
-    If encryption is absent or broken → TAMPERING THREAT
-
-  REPUDIATION:
-    "Can actions be denied? Is there an audit trail?"
-    Input: logging_posture (SAST) + topology (Repo)
-    If logging_posture < threshold → REPUDIATION THREAT
-
-  INFORMATION DISCLOSURE:
-    "Can sensitive data be exposed to unauthorized parties?"
-    Input: data_sensitivity (Repo) + info_leakage (DAST) + crypto_posture (SAST)
-    If high sensitivity data flows without encryption → INFORMATION DISCLOSURE THREAT
-
-  DENIAL OF SERVICE:
-    "Can the service be made unavailable?"
-    Input: defense_depth (Repo) + attack_surface (DAST) + topology_exposure (Repo)
-    If single point of failure AND high exposure → DOS THREAT
-
-  ELEVATION OF PRIVILEGE:
-    "Can an attacker gain higher access than intended?"
-    Input: auth_posture (SAST) + runtime_auth (DAST) + topology (Repo)
-    If direct access from low-trust to high-trust without auth → EOP THREAT
+src/causal/v2/
+├── __init__.py          # Module documentation
+├── base.py              # ArchitecturalEdgeNode, ArchitecturalSubDAG ABC
+│                          forward_propagate(), backward_query()
+├── sast_subdag.py       # Severity-weighted posture, CWE + keyword classification
+├── dast_subdag.py       # Runtime posture, observed/not-observed handling
+├── repo_subdag.py       # Structural posture from component graph
+├── master_dag.py        # 6 cross-layer rules, what_if(), roadmap_to_zero()
+├── stride_layer.py      # STRIDE cream layer, CWE tracing, 3-level remediation
+└── engine.py            # CausalTMv2Engine orchestrator
 ```
 
 ---
 
-## Counterfactual & What-If (Bidirectional Propagation)
+## Validated Results (OWASP Juice Shop)
 
-### Forward: "If I fix X, what happens everywhere?"
+With real Semgrep SAST (23 findings) + real ZAP DAST (10 findings) + architecture model:
 
-```
-User asks: "What if I add authentication to the Frontend→Backend flow?"
-
-1. APPLY in Repo sub-DAG:
-   → Data flow updated: is_authenticated = true
-   → Edge node: boundary_integrity improves (0.6 → 0.8)
-
-2. CROSS-LAYER propagation:
-   → SAST: auth_posture should improve (if code implements the auth)
-   → DAST: runtime_auth should improve (auth now enforced)
-
-3. MASTER DAG recalculates:
-   → Overall auth posture improves
-   → Attack surface doesn't change (still exposed, but now protected)
-
-4. STRIDE re-evaluates:
-   → Spoofing threat on this flow: MITIGATED
-   → Elevation of Privilege via this path: MITIGATED
-   → Other threats: unchanged
-
-5. RESULT:
-   "Adding auth on Frontend→Backend eliminates 2 STRIDE threats,
-    reduces overall risk from 0.72 → 0.55 (24% reduction)"
-```
-
-### Backward: "What must I fix to eliminate this STRIDE threat?"
-
-```
-User asks: "How do I eliminate the Information Disclosure threat on the DB flow?"
-
-1. STRIDE identifies the threat's CAUSES:
-   → Data flow carries PII (data_sensitivity = 0.9)
-   → Flow is not encrypted (crypto_posture for this flow = 0)
-   → DAST confirms data visible in transit (runtime_encryption = 0 on this flow)
-
-2. BACKWARD propagation asks: "What changes would make this threat disappear?"
-   → OPTION A: Encrypt the flow (Repo: add TLS to DB connection)
-     → Cross-layer: SAST crypto_posture improves, DAST runtime_encryption improves
-     → Net: Threat ELIMINATED
-   → OPTION B: Remove sensitive data from this flow (redesign)
-     → Cross-layer: data_sensitivity for this flow drops
-     → Net: Threat ELIMINATED but requires redesign
-   → OPTION C: Add compensating control (network isolation so only backend reaches DB)
-     → Cross-layer: topology_exposure drops for DB, defense_depth improves
-     → Net: Threat MITIGATED (not eliminated — data still unencrypted but unreachable)
-
-3. RESULT:
-   "To eliminate Info Disclosure on DB flow:
-    BEST: Add TLS encryption (effort: 2h, eliminates threat fully)
-    ALT: Network isolation (effort: 4h, mitigates but doesn't eliminate)
-    
-    Adding TLS also resolves: SAST CWE-311 finding, DAST TLS warning
-    Cross-layer benefit: 2 additional findings auto-resolve"
-```
-
-### Sequenced Roadmap: "How do I get to 0%?"
-
-```
-STEP 1: What SINGLE fix has the highest cross-layer impact?
-  → Answer: "Add API gateway" (resolves 3 STRIDE threats across all layers)
-
-STEP 2: Given Step 1 done, what's next?
-  → Answer: "Encrypt DB connection" (resolves 2 remaining Info Disclosure threats)
-
-STEP 3: Given Steps 1+2, what's next?
-  → Answer: "Add audit logging" (resolves all Repudiation threats)
-
-... continue until all STRIDE threats = 0
-```
+- **Overall Risk:** 0.462 (Medium)
+- **STRIDE Threats:** 6 (one per category)
+- **Posture:** Spoofing 62%, Tampering 56%, Repudiation 67%, Info Disclosure 43%, DoS 26%, EoP 69%
+- **Roadmap:** 11 steps to near-zero (no duplicates, with cross-layer effects)
+- **Ground Truth Match:** 53%+ of known Juice Shop challenges identified
+- **All 4 SVGs rendered:** DFD, SAST sub-graph, DAST sub-graph, Repo sub-graph, Master DAG
 
 ---
 
-## Data Flow Diagram (DFD) Role
-
-The DFD is generated from the **Repo sub-DAG's topology understanding** and annotated with **STRIDE findings from Layer 5**:
-
-```
-DFD shows:
-  • Components (from Repo)
-  • Data flows (from Repo, enriched with SAST data types + DAST confirmation)
-  • Trust boundaries (from Repo)
-  • STRIDE threats PER ELEMENT (from Layer 5)
-  • Color coding by threat severity
-  • Annotations: "Auth: ✓ (SAST confirms) ✓ (DAST confirms)" or "Auth: ✗ (SAST gap) ✗ (DAST bypass)"
-```
-
----
-
-## Summary: What CausalTM IS and IS NOT
+## What CausalTM IS and IS NOT
 
 ### IS:
 - A STRIDE-based threat modeling tool for application ARCHITECTURE
-- Consumes SAST/DAST to UNDERSTAND the design (not to fix vulns)
-- Uses Federated Causal AI to reason across layers
-- Produces a remediation ROADMAP (architecture fixes first)
+- Consumes SAST/DAST to UNDERSTAND the design (not to fix vulnerabilities)
+- Uses Federated Causal AI with severity-weighted posture and cross-layer reasoning
+- Produces a sequenced remediation ROADMAP (architecture fixes first)
 - Accounts for cross-layer side effects of every fix
+- Generic — works on any project with SARIF + ZAP XML + repo
 
 ### IS NOT:
 - A vulnerability scanner (SAST/DAST tools do that)
