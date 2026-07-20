@@ -19,6 +19,7 @@ from src.causal.v3.models import (
 )
 from src.causal.v3.normalization import NormalizationLayerV3
 from src.causal.v3.sast_subdag import SASTSubDAGV3
+from src.causal.v3.dast_subdag import DASTSubDAGV3
 from src.causal.v3.fusion import FusionLayerV3
 from src.causal.v3.master_dag import MasterDAGV3
 from src.causal.v3.stride_layer import StrideLayerV3
@@ -39,6 +40,7 @@ class CausalTMv3Engine:
     def __init__(self):
         self._normalization = NormalizationLayerV3()
         self._sast_subdag = SASTSubDAGV3()
+        self._dast_subdag = DASTSubDAGV3()
         self._fusion = FusionLayerV3()
         self._master_dag = MasterDAGV3()
         self._stride_layer = StrideLayerV3()
@@ -93,15 +95,25 @@ class CausalTMv3Engine:
         # ── Layer C: Build sub-DAGs and compute boundary postures ──
         logger.info("[Layer C] Computing boundary-specific postures...")
 
-        sast_only = [e for e in all_evidence if e.source_type == SourceType.SAST]
-        self._sast_subdag.build(sast_only)
-        boundary_postures = self._sast_subdag.compute_boundary_postures()
-        logger.info(f"  SAST sub-DAG: {len(boundary_postures)} boundary postures")
+        boundary_postures = []
 
-        # Future: DAST sub-DAG, Repo sub-DAG would add more boundary postures here
-        # dast_only = [e for e in all_evidence if e.source_type == SourceType.DAST]
-        # self._dast_subdag.build(dast_only)
-        # boundary_postures.extend(self._dast_subdag.compute_boundary_postures())
+        # SAST sub-DAG
+        sast_only = [e for e in all_evidence if e.source_type == SourceType.SAST]
+        if sast_only:
+            self._sast_subdag.build(sast_only)
+            sast_postures = self._sast_subdag.compute_boundary_postures()
+            boundary_postures.extend(sast_postures)
+            logger.info(f"  SAST sub-DAG: {len(sast_postures)} boundary postures")
+
+        # DAST sub-DAG
+        dast_only = [e for e in all_evidence if e.source_type == SourceType.DAST]
+        if dast_only:
+            self._dast_subdag.build(dast_only)
+            dast_postures = self._dast_subdag.compute_boundary_postures()
+            boundary_postures.extend(dast_postures)
+            logger.info(f"  DAST sub-DAG: {len(dast_postures)} boundary postures")
+
+        # Future: Repo sub-DAG would add structural postures here
 
         # ── Layer D: Fusion ──
         logger.info("[Layer D] Fusing boundary postures into architectural posture...")

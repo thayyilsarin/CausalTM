@@ -81,8 +81,12 @@ class StrideLayerV3:
     v3 STRIDE Layer — hybrid threat classification.
 
     Two classification modes:
-      1. Posture-derived: posture below threshold → threat at that severity
-      2. Rule-based: known patterns combining posture + context
+      1. Rule-based: known patterns combining posture + architectural context
+         (public-facing boundary, trust boundary crossing, sensitive data)
+      2. Posture-derived: blended posture below threshold → threat at that severity
+
+    Rule-based threats take priority and carry higher confidence.
+    Posture-derived threats fill gaps where no specific rule matches.
     """
 
     def evaluate(
@@ -92,59 +96,59 @@ class StrideLayerV3:
         component_graph: dict,
     ) -> list[StrideThreat]:
         """
-        Evaluate STRIDE threats from posture + context.
+        Evaluate STRIDE threats using hybrid approach.
 
-        Generates threats where posture falls below thresholds.
-        Attaches evidence chains tracing back through fusion to boundaries.
+        Phase 1: Rule-based — check known architectural patterns
+        Phase 2: Posture-derived — threshold checks for remaining categories
+        Deduplicates: if a rule already generated a threat for a category, skip posture-derived.
         """
         threats: list[StrideThreat] = []
         threat_counter = 0
+        categories_covered: set[str] = set()
 
+        # ── Phase 1: Rule-based classification ──
+        rule_threats = self._evaluate_rules(
+            stride_postures, fusion_output, component_graph
+        )
+        for t in rule_threats:
+            threat_counter += 1
+            t.id = f"stride-v3-{threat_counter:03d}"
+            threats.append(t)
+            categories_covered.add(t.category.value)
+
+        # ── Phase 2: Posture-derived (for categories not already covered by rules) ──
         for stride_cat in StrideCategory:
-            posture = stride_postures.get(stride_cat.value, 1.0)
+            if stride_cat.value in categories_covered:
+                continue  # Already handled by rule-based
 
-            # Determine severity from threshold
+            posture = stride_postures.get(stride_cat.value, 1.0)
             severity = self._posture_to_severity(posture)
             if severity is None:
-                continue  # Posture above all thresholds — no threat
+                continue
 
             threat_counter += 1
             threshold_used = self._get_threshold(severity)
-
-            # Determine triggering control categories
             trigger_controls = STRIDE_TRIGGERS.get(stride_cat, [])
-
-            # Build evidence chain from fusion output
             evidence = self._build_evidence_chain(trigger_controls, fusion_output)
-
-            # Determine affected boundaries
             affected_boundaries = list(set(
                 e.boundary_id for e in evidence if e.boundary_id != "global/unresolved"
             ))
-
-            # Determine affected components from boundaries
             affected_components = self._get_components_for_boundaries(
                 affected_boundaries, component_graph
             )
-
-            # Collect traced CWEs from evidence
             traced_cwes = list(set(
                 cwe for e in evidence for cwe in e.contributing_cwes
             ))
-
-            # Compute confidence from fusion
             avg_confidence = (
                 sum(e.source_confidence for e in evidence) / len(evidence)
                 if evidence else 0.5
             )
-
-            # Build remediation guidance
             remediation = self._build_remediation(stride_cat, trigger_controls, affected_boundaries)
 
             threat = StrideThreat(
                 id=f"stride-v3-{threat_counter:03d}",
                 category=stride_cat,
-                title=f"{stride_cat.value} — Architectural Threat",
+                title=f"{stride_cat.value} — Posture-Derived Threat",
                 description=THREAT_DESCRIPTIONS.get(stride_cat, ""),
                 severity=severity,
                 confidence=round(avg_confidence, 3),
@@ -162,17 +166,239 @@ class StrideLayerV3:
                 remediation_code=remediation["code"],
                 remediation_config=remediation["config"],
             )
-
             threats.append(threat)
 
-            logger.info(
-                f"[STRIDE v3] {stride_cat.value}: severity={severity.value} "
-                f"posture={posture:.3f} boundaries={affected_boundaries} "
-                f"cwes={traced_cwes[:3]}"
-            )
-
-        logger.info(f"[STRIDE Layer v3] Generated {len(threats)} threats")
+        logger.info(
+            f"[STRIDE Layer v3] Generated {len(threats)} threats "
+            f"(rule-based: {len(rule_threats)}, posture-derived: {len(threats) - len(rule_threats)})"
+        )
         return threats
+
+    def _evaluate_rules(
+        self,
+        stride_postures: dict[str, float],
+        fusion_output: FusionLayerOutput,
+        component_graph: dict,
+    ) -> list[StrideThreat]:
+        """
+        Rule-based STRIDE classification.
+
+        Checks known architectural patterns that combine posture weakness
+        with boundary context (public-facing, trust crossing, sensitive data).
+        """
+        rule_threats: list[StrideThreat] = []
+        components = component_graph.get("components", [])
+        flows = component_graph.get("data_flows", [])
+
+        # Architectural context
+        has_public_facing = any(c.get("is_public_facing") for c in components)
+        has_trust_boundary_crossing = any(f.get("crosses_trust_boundary") for f in flows)
+        has_sensitive_data = any(
+            any(s in (f.get("data_sensitivity") or []) for s in ["credentials", "pii", "secret"])
+            for f in flows
+        )
+        has_unencrypted_internal = any(
+            not f.get("is_encrypted") and not f.get("crosses_trust_boundary", True)
+            for f in flows
+        )
+        has_unauthenticated_public = any(
+            c.get("is_public_facing") and not c.get("has_authentication")
+            for c in components
+        )
+
+        # Get posture values from fusion
+        posture_lookup = {}
+        for ap in fusion_output.postures:
+            posture_lookup[ap.control_category.value] = ap.posture
+
+        auth_posture = posture_lookup.get("auth", 1.0)
+        validation_posture = posture_lookup.get("validation", 1.0)
+        crypto_posture = posture_lookup.get("crypto", 1.0)
+        logging_posture = posture_lookup.get("logging", 1.0)
+
+        # ── Rule 1: Spoofing ──
+        # IF auth posture is weak AND there are public-facing unauthenticated components
+        if auth_posture < 0.85 and has_unauthenticated_public:
+            severity = self._posture_to_severity(
+                stride_postures.get(StrideCategory.SPOOFING.value, 1.0)
+            )
+            if severity:
+                evidence = self._build_evidence_chain([ControlCategory.AUTH], fusion_output)
+                affected_boundaries = self._get_public_boundaries(component_graph)
+                rule_threats.append(self._make_rule_threat(
+                    category=StrideCategory.SPOOFING,
+                    severity=severity,
+                    posture=stride_postures.get(StrideCategory.SPOOFING.value, 1.0),
+                    evidence=evidence,
+                    affected_boundaries=affected_boundaries,
+                    component_graph=component_graph,
+                    rule_reason="Weak auth posture + public-facing unauthenticated components",
+                ))
+
+        # ── Rule 2: Tampering ──
+        # IF validation posture is weak AND flows cross trust boundaries
+        if validation_posture < 0.85 and has_trust_boundary_crossing:
+            severity = self._posture_to_severity(
+                stride_postures.get(StrideCategory.TAMPERING.value, 1.0)
+            )
+            if severity:
+                evidence = self._build_evidence_chain([ControlCategory.VALIDATION], fusion_output)
+                affected_boundaries = self._get_crossing_boundaries(component_graph)
+                rule_threats.append(self._make_rule_threat(
+                    category=StrideCategory.TAMPERING,
+                    severity=severity,
+                    posture=stride_postures.get(StrideCategory.TAMPERING.value, 1.0),
+                    evidence=evidence,
+                    affected_boundaries=affected_boundaries,
+                    component_graph=component_graph,
+                    rule_reason="Weak validation posture + flows crossing trust boundaries",
+                ))
+
+        # ── Rule 3: Information Disclosure ──
+        # IF crypto posture is weak AND sensitive data flows exist
+        if crypto_posture < 0.90 and has_sensitive_data and has_unencrypted_internal:
+            severity = self._posture_to_severity(
+                stride_postures.get(StrideCategory.INFORMATION_DISCLOSURE.value, 1.0)
+            )
+            if severity:
+                evidence = self._build_evidence_chain([ControlCategory.CRYPTO], fusion_output)
+                affected_boundaries = self._get_sensitive_boundaries(component_graph)
+                rule_threats.append(self._make_rule_threat(
+                    category=StrideCategory.INFORMATION_DISCLOSURE,
+                    severity=severity,
+                    posture=stride_postures.get(StrideCategory.INFORMATION_DISCLOSURE.value, 1.0),
+                    evidence=evidence,
+                    affected_boundaries=affected_boundaries,
+                    component_graph=component_graph,
+                    rule_reason="Weak crypto posture + sensitive data on unencrypted internal flows",
+                ))
+
+        # ── Rule 4: Denial of Service ──
+        # IF validation posture is weak AND public-facing components exist
+        if validation_posture < 0.70 and has_public_facing:
+            severity = self._posture_to_severity(
+                stride_postures.get(StrideCategory.DENIAL_OF_SERVICE.value, 1.0)
+            )
+            if severity:
+                evidence = self._build_evidence_chain([ControlCategory.VALIDATION], fusion_output)
+                affected_boundaries = self._get_public_boundaries(component_graph)
+                rule_threats.append(self._make_rule_threat(
+                    category=StrideCategory.DENIAL_OF_SERVICE,
+                    severity=severity,
+                    posture=stride_postures.get(StrideCategory.DENIAL_OF_SERVICE.value, 1.0),
+                    evidence=evidence,
+                    affected_boundaries=affected_boundaries,
+                    component_graph=component_graph,
+                    rule_reason="Weak validation posture + public-facing components (resource exhaustion risk)",
+                ))
+
+        # ── Rule 5: Elevation of Privilege ──
+        # IF both auth AND validation are weak AND trust boundaries are crossed
+        if auth_posture < 0.85 and validation_posture < 0.85 and has_trust_boundary_crossing:
+            severity = self._posture_to_severity(
+                stride_postures.get(StrideCategory.ELEVATION_OF_PRIVILEGE.value, 1.0)
+            )
+            if severity:
+                evidence = self._build_evidence_chain(
+                    [ControlCategory.AUTH, ControlCategory.VALIDATION], fusion_output
+                )
+                affected_boundaries = self._get_crossing_boundaries(component_graph)
+                rule_threats.append(self._make_rule_threat(
+                    category=StrideCategory.ELEVATION_OF_PRIVILEGE,
+                    severity=severity,
+                    posture=stride_postures.get(StrideCategory.ELEVATION_OF_PRIVILEGE.value, 1.0),
+                    evidence=evidence,
+                    affected_boundaries=affected_boundaries,
+                    component_graph=component_graph,
+                    rule_reason="Weak auth + validation posture + trust boundary crossings",
+                ))
+
+        return rule_threats
+
+    def _make_rule_threat(
+        self,
+        category: StrideCategory,
+        severity: Severity,
+        posture: float,
+        evidence: list,
+        affected_boundaries: list[str],
+        component_graph: dict,
+        rule_reason: str,
+    ) -> StrideThreat:
+        """Construct a rule-based StrideThreat."""
+        trigger_controls = STRIDE_TRIGGERS.get(category, [])
+        affected_components = self._get_components_for_boundaries(affected_boundaries, component_graph)
+        traced_cwes = list(set(cwe for e in evidence for cwe in e.contributing_cwes))
+        avg_confidence = (
+            sum(e.source_confidence for e in evidence) / len(evidence)
+            if evidence else 0.5
+        )
+        # Rule-based threats get a confidence boost (pattern + posture = stronger signal)
+        boosted_confidence = min(1.0, avg_confidence * 1.15)
+        remediation = self._build_remediation(category, trigger_controls, affected_boundaries)
+
+        return StrideThreat(
+            id="",  # Will be assigned by caller
+            category=category,
+            title=f"{category.value} — Rule-Matched Threat ({rule_reason})",
+            description=THREAT_DESCRIPTIONS.get(category, ""),
+            severity=severity,
+            confidence=round(boosted_confidence, 3),
+            classification_method=ThreatClassificationMethod.RULE_MATCHED,
+            triggering_posture_category=trigger_controls[0] if trigger_controls else ControlCategory.VALIDATION,
+            triggering_posture_value=posture,
+            posture_threshold_used=self._get_threshold(severity),
+            evidence=evidence,
+            layers_contributing=len(set(e.source_type for e in evidence)),
+            traced_cwes=traced_cwes,
+            affected_boundaries=affected_boundaries,
+            affected_components=affected_components,
+            affected_flows=[],
+            remediation_architecture=remediation["architecture"],
+            remediation_code=remediation["code"],
+            remediation_config=remediation["config"],
+        )
+
+    def _get_public_boundaries(self, component_graph: dict) -> list[str]:
+        """Get boundary IDs that contain public-facing components."""
+        boundaries = component_graph.get("trust_boundaries", [])
+        components = component_graph.get("components", [])
+        public_comp_ids = {c["id"] for c in components if c.get("is_public_facing")}
+        result = []
+        for b in boundaries:
+            if any(cid in public_comp_ids for cid in b.get("component_ids", [])):
+                result.append(b["id"])
+        return result
+
+    def _get_crossing_boundaries(self, component_graph: dict) -> list[str]:
+        """Get boundary IDs involved in trust boundary crossings."""
+        flows = component_graph.get("data_flows", [])
+        boundaries = component_graph.get("trust_boundaries", [])
+        crossing_comp_ids = set()
+        for f in flows:
+            if f.get("crosses_trust_boundary"):
+                crossing_comp_ids.add(f.get("source_id", ""))
+                crossing_comp_ids.add(f.get("target_id", ""))
+        result = []
+        for b in boundaries:
+            if any(cid in crossing_comp_ids for cid in b.get("component_ids", [])):
+                result.append(b["id"])
+        return result
+
+    def _get_sensitive_boundaries(self, component_graph: dict) -> list[str]:
+        """Get boundary IDs handling sensitive data."""
+        flows = component_graph.get("data_flows", [])
+        boundaries = component_graph.get("trust_boundaries", [])
+        sensitive_comp_ids = set()
+        for f in flows:
+            if any(s in (f.get("data_sensitivity") or []) for s in ["credentials", "pii", "secret"]):
+                sensitive_comp_ids.add(f.get("source_id", ""))
+                sensitive_comp_ids.add(f.get("target_id", ""))
+        result = []
+        for b in boundaries:
+            if any(cid in sensitive_comp_ids for cid in b.get("component_ids", [])):
+                result.append(b["id"])
+        return result
 
     def _posture_to_severity(self, posture: float) -> Optional[Severity]:
         """Map posture value to threat severity using thresholds."""

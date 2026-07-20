@@ -240,8 +240,20 @@ class MasterDAGV3:
         new_postures = dict(self._posture_values)
         new_postures[variable] = new_value
 
+        # Record direct effect (the intervention itself)
+        direct_effects = [
+            CausalEffect(
+                intervention_variable=variable,
+                intervention_value=new_value,
+                affected_variable=variable,
+                predicted_change=round(delta, 4),
+                new_predicted_value=new_value,
+                rule_applied="direct_intervention",
+                assumptions_required=["Fix is implemented and deployed"],
+            )
+        ]
+
         # Propagate through cross-layer rules
-        direct_effects = []
         propagated_effects = []
 
         for rule in CROSS_LAYER_RULES:

@@ -384,32 +384,43 @@ EXPECTED_FUSED_POSTURES = {
 #
 # validation posture = 0.449 → HIGH Tampering threat + HIGH DoS threat
 # auth posture = 0.767 → MEDIUM Spoofing threat
-# crypto posture = 0.867 → LOW Information Disclosure threat (barely below 0.85 threshold... borderline)
+# crypto posture = 0.867 → NO threat (0.867 >= 0.85, above all thresholds)
 # logging posture = 1.0 → No Repudiation threat
+#
+# Note: Information Disclosure is determined by BOTH crypto + validation
+# in the STRIDE mapping (crypto=0.55, validation=0.45). The blended
+# InfoDisc posture = 0.55*0.867 + 0.45*0.449 = 0.477 + 0.202 = 0.679
+# which IS below 0.70 → MEDIUM Information Disclosure threat.
 
 EXPECTED_STRIDE_THREATS = [
     {
         "category": "Tampering",
-        "severity": "High",
-        "reason": "validation posture 0.449 < 0.50 threshold",
+        "severity": "Medium",
+        "reason": "blended posture (validation 0.60 + crypto 0.40) < 0.70 threshold",
         "primary_boundary": "tb-internal",
     },
     {
         "category": "Denial of Service",
-        "severity": "High",
-        "reason": "validation posture 0.449 < 0.50 threshold (validation contributes to DoS)",
+        "severity": "Medium",
+        "reason": "blended posture (validation 0.70 + auth 0.30) < 0.70 threshold",
         "primary_boundary": "tb-internal",
     },
     {
         "category": "Spoofing",
-        "severity": "Medium",
-        "reason": "auth posture 0.767 < 0.85 threshold",
+        "severity": "Low",
+        "reason": "blended posture (auth 0.60 + crypto 0.40) < 0.85 threshold",
         "primary_boundary": "tb-internal",
     },
     {
         "category": "Information Disclosure",
-        "severity": "Low",
-        "reason": "crypto posture 0.867 < 0.85 threshold (barely)",
+        "severity": "Medium",
+        "reason": "blended posture (crypto 0.55 + validation 0.45) < 0.70 threshold",
+        "primary_boundary": "tb-internal",
+    },
+    {
+        "category": "Elevation of Privilege",
+        "severity": "Medium",
+        "reason": "blended posture (auth 0.50 + validation 0.50) < 0.70 threshold",
         "primary_boundary": "tb-internal",
     },
 ]
