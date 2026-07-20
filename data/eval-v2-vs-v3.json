@@ -1,0 +1,302 @@
+{
+  "inputs": {
+    "sast_findings": 7,
+    "dast_findings": 3,
+    "components": 5,
+    "data_flows": 4,
+    "trust_boundaries": 3
+  },
+  "v2": {
+    "version": "v2",
+    "overall_risk": 0.36357142857142855,
+    "risk_rating": "Medium",
+    "total_threats": 5,
+    "stride_posture": {
+      "Spoofing": 0.6288888888888889,
+      "Tampering": 0.5722222222222223,
+      "Repudiation": 1.0,
+      "Information Disclosure": 0.6152380952380953,
+      "Denial of Service": 0.33555555555555555,
+      "Elevation of Privilege": 0.6666666666666667
+    },
+    "threats": [
+      {
+        "category": "Spoofing",
+        "severity": "Medium",
+        "title": "Insufficient Identity Verification at Trust Boundaries",
+        "confidence": 0.65,
+        "layers_confirming": 1,
+        "affected_components": [
+          "CWE-798"
+        ],
+        "boundary_specific": false,
+        "classification_method": "threshold_global"
+      },
+      {
+        "category": "Tampering",
+        "severity": "Medium",
+        "title": "Data Integrity Not Guaranteed Across Boundaries",
+        "confidence": 0.62,
+        "layers_confirming": 1,
+        "affected_components": [
+          "CWE-22",
+          "CWE-327",
+          "CWE-770",
+          "CWE-79",
+          "CWE-89"
+        ],
+        "boundary_specific": false,
+        "classification_method": "threshold_global"
+      },
+      {
+        "category": "Information Disclosure",
+        "severity": "Medium",
+        "title": "Sensitive Data Exposure Risk",
+        "confidence": 0.62,
+        "layers_confirming": 1,
+        "affected_components": [
+          "CWE-327"
+        ],
+        "boundary_specific": false,
+        "classification_method": "threshold_global"
+      },
+      {
+        "category": "Denial of Service",
+        "severity": "High",
+        "title": "Service Availability Risk from Exposure",
+        "confidence": 0.65,
+        "layers_confirming": 1,
+        "affected_components": [
+          "CWE-22",
+          "CWE-770",
+          "CWE-79",
+          "CWE-89"
+        ],
+        "boundary_specific": false,
+        "classification_method": "threshold_global"
+      },
+      {
+        "category": "Elevation of Privilege",
+        "severity": "Medium",
+        "title": "Privilege Escalation Possible Through Boundary Gaps",
+        "confidence": 0.62,
+        "layers_confirming": 1,
+        "affected_components": [
+          "CWE-22",
+          "CWE-770",
+          "CWE-79",
+          "CWE-798",
+          "CWE-89"
+        ],
+        "boundary_specific": false,
+        "classification_method": "threshold_global"
+      }
+    ],
+    "roadmap_steps": 7,
+    "first_fix": "Exposed Attack Surface (Runtime)",
+    "layer_summary": {
+      "sast": {
+        "edge_nodes": 4,
+        "base_variables": 7,
+        "posture_values": {
+          "sast.auth_posture": 0.7666666666666667,
+          "sast.crypto_posture": 0.8666666666666667,
+          "sast.validation_posture": 0.0,
+          "sast.logging_posture": 1.0
+        }
+      },
+      "dast": {
+        "edge_nodes": 4,
+        "base_variables": 3,
+        "observed": true,
+        "posture_values": {
+          "dast.runtime_auth_enforcement": 1.0,
+          "dast.runtime_encryption_status": 1.0,
+          "dast.exposed_attack_surface": 0.04,
+          "dast.information_leakage": 0.0
+        }
+      },
+      "repo": {
+        "edge_nodes": 4,
+        "base_variables": 9,
+        "posture_values": {
+          "repo.topology_exposure": 0.6,
+          "repo.data_sensitivity": 1.0,
+          "repo.trust_boundary_integrity": 1.0,
+          "repo.defense_depth": 0.5666666666666667
+        }
+      }
+    },
+    "boundary_specificity": "global",
+    "traceability_depth": 2,
+    "confidence_tracking": false,
+    "fusion_layer": false,
+    "multi_source_fusion": false
+  },
+  "v3": {
+    "version": "v3",
+    "overall_risk": 0.2652,
+    "risk_rating": "Low",
+    "total_threats": 5,
+    "stride_posture": {
+      "Spoofing": 0.8374,
+      "Tampering": 0.6609,
+      "Repudiation": 0.9406,
+      "Information Disclosure": 0.7183,
+      "Denial of Service": 0.5962,
+      "Elevation of Privilege": 0.6551
+    },
+    "threats": [
+      {
+        "category": "Spoofing",
+        "severity": "Low",
+        "title": "Spoofing \u2014 Rule-Matched Threat (Weak auth posture + public-facing unauthenticated components)",
+        "confidence": 0.724,
+        "layers_confirming": 2,
+        "affected_boundaries": [
+          "tb-external",
+          "tb-dmz"
+        ],
+        "boundary_specific": true,
+        "classification_method": "rule_matched"
+      },
+      {
+        "category": "Tampering",
+        "severity": "Medium",
+        "title": "Tampering \u2014 Rule-Matched Threat (Weak validation posture + flows crossing trust boundaries)",
+        "confidence": 0.786,
+        "layers_confirming": 1,
+        "affected_boundaries": [
+          "tb-external",
+          "tb-dmz",
+          "tb-internal"
+        ],
+        "boundary_specific": true,
+        "classification_method": "rule_matched"
+      },
+      {
+        "category": "Information Disclosure",
+        "severity": "Low",
+        "title": "Information Disclosure \u2014 Rule-Matched Threat (Weak crypto posture + sensitive data on unencrypted internal flows)",
+        "confidence": 0.724,
+        "layers_confirming": 2,
+        "affected_boundaries": [
+          "tb-external",
+          "tb-dmz",
+          "tb-internal"
+        ],
+        "boundary_specific": true,
+        "classification_method": "rule_matched"
+      },
+      {
+        "category": "Denial of Service",
+        "severity": "Medium",
+        "title": "Denial of Service \u2014 Rule-Matched Threat (Weak validation posture + public-facing components (resource exhaustion risk))",
+        "confidence": 0.786,
+        "layers_confirming": 1,
+        "affected_boundaries": [
+          "tb-external",
+          "tb-dmz"
+        ],
+        "boundary_specific": true,
+        "classification_method": "rule_matched"
+      },
+      {
+        "category": "Elevation of Privilege",
+        "severity": "Medium",
+        "title": "Elevation of Privilege \u2014 Rule-Matched Threat (Weak auth + validation posture + trust boundary crossings)",
+        "confidence": 0.761,
+        "layers_confirming": 2,
+        "affected_boundaries": [
+          "tb-external",
+          "tb-dmz",
+          "tb-internal"
+        ],
+        "boundary_specific": true,
+        "classification_method": "rule_matched"
+      }
+    ],
+    "roadmap_steps": 0,
+    "first_fix": "N/A (roadmap pending)",
+    "boundaries_assessed": [
+      "global/unresolved",
+      "tb-dmz",
+      "tb-internal"
+    ],
+    "uncertain_divergences": 0,
+    "boundary_specificity": "per-boundary",
+    "traceability_depth": 4,
+    "confidence_tracking": true,
+    "fusion_layer": true,
+    "multi_source_fusion": true,
+    "fused_postures": {
+      "validation": {
+        "posture": 0.508,
+        "confidence": 0.6833,
+        "worst_critical": 0.3,
+        "worst_critical_id": "tb-internal"
+      },
+      "auth": {
+        "posture": 0.8021,
+        "confidence": 0.63,
+        "worst_critical": 0.7667,
+        "worst_critical_id": "tb-internal"
+      },
+      "crypto": {
+        "posture": 0.8903,
+        "confidence": 0.63,
+        "worst_critical": 0.8667,
+        "worst_critical_id": "tb-internal"
+      }
+    }
+  },
+  "comparison": {
+    "risk_difference": -0.0984,
+    "threat_count_v2": 5,
+    "threat_count_v3": 5,
+    "boundary_specificity_improvement": "v3 localizes to specific boundaries; v2 is global only",
+    "traceability_improvement": "2 layers (v2) \u2192 4 layers (v3)",
+    "confidence_tracking": "v2=False, v3=True",
+    "fusion_layer": "v2=False, v3=True",
+    "classification_methods_v3": [
+      "rule_matched"
+    ]
+  },
+  "rq1_evidence": {
+    "question": "Does boundary-specific posture improve threat detection and prioritization over global posture?",
+    "v2_approach": "Global posture per control category. One SQLi reduces validation posture for ENTIRE system.",
+    "v3_approach": "Boundary-specific posture. One SQLi reduces validation posture ONLY at the affected boundary.",
+    "key_differences": [
+      {
+        "aspect": "Boundary localization",
+        "v2": "All threats attributed to 'Architecture' (global)",
+        "v3": "Threats localized to specific boundaries: ['tb-dmz', 'tb-external', 'tb-internal']",
+        "improvement": "v3 tells you WHERE to fix, not just WHAT to fix"
+      },
+      {
+        "aspect": "Over-generalization avoidance",
+        "v2": "1 SQLi finding reduces validation posture for entire system by 23%",
+        "v3": "1 SQLi finding reduces validation posture ONLY at tb-internal by 23%. Other boundaries unaffected.",
+        "improvement": "v3 avoids 'whole system is weak' false generalization"
+      },
+      {
+        "aspect": "Confidence and uncertainty",
+        "v2": "No confidence tracking. All assessments presented as equally certain.",
+        "v3": "Confidence tracked per layer. Single-source penalty applied. 0 divergences flagged.",
+        "improvement": "v3 communicates uncertainty, enabling better decision-making"
+      },
+      {
+        "aspect": "Threat classification approach",
+        "v2": "Pure threshold on global posture",
+        "v3": "Hybrid: ['rule_matched']. Rules check architectural context (public-facing, trust crossing, sensitive data).",
+        "improvement": "v3 threats are contextually grounded, not just threshold-derived"
+      },
+      {
+        "aspect": "Worst-case boundary awareness",
+        "v2": "Simple average across all findings",
+        "v3": "\u03b1=0.6 weighted avg + (1-\u03b1) worst-critical. Validation worst=0.3 at tb-internal",
+        "improvement": "v3 prevents dilution of severe local risk by safe internal boundaries"
+      }
+    ]
+  }
+}
