@@ -234,9 +234,14 @@ class FusionLayer(ABC):
 
         Rules:
           - Both agree (within 0.3): weighted average, confidence boost
-          - Both disagree (>0.3): bias toward higher-coverage/confidence source,
+          - Both disagree (>0.3): bias toward higher-confidence source,
             flag as uncertain_divergence
           - Single source: use value, apply 0.7 confidence penalty
+
+        Note on coverage (MVP scope): Coverage metadata is recorded on
+        BoundaryPosture but is NOT used as a first-class fusion weight in MVP.
+        It may serve as a tie-breaker or diagnostic signal only. Full
+        coverage-aware weighting is a later enhancement.
         """
         ...
 
@@ -438,18 +443,29 @@ class CausalTMv3Engine(ABC):
         sast_findings: list[dict],
         dast_findings: list[dict],
         iac_findings: Optional[list[dict]] = None,
+        repo_findings: Optional[list[dict]] = None,
     ) -> CausalTMv3Result:
         """
         Run complete v3 analysis pipeline.
 
         Args:
-            component_graph: Architecture model (components, flows, boundaries)
+            component_graph: Architecture model (components, flows, boundaries).
+                This also serves as the primary input for the Repo sub-DAG —
+                structural properties (topology, exposure, boundaries) are derived
+                directly from this graph. The Repo sub-DAG does NOT need a
+                separate findings list; it reasons over the architecture itself.
             sast_findings: Raw SAST findings (from source adapter)
             dast_findings: Raw DAST findings (from source adapter)
-            iac_findings: Optional IaC findings (from source adapter)
+            iac_findings: Optional IaC findings (from source adapter).
+                When provided, these are processed by the SAST sub-DAG using
+                IaC-specific keyword classification.
+            repo_findings: Optional additional repo-derived findings (e.g.,
+                from dependency scanning, secret detection, or custom analyzers).
+                If None, the Repo sub-DAG operates solely on component_graph.
 
         Returns:
-            Complete CausalTMv3Result with threats, postures, roadmap.
+            Complete CausalTMv3Result with threats, postures, roadmap,
+            attack paths, and DFD model.
         """
         ...
 

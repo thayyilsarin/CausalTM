@@ -113,8 +113,8 @@ class NormalizedEvidence(BaseModel):
     cwe_id: Optional[str] = None
     rule_id: Optional[str] = None
 
-    # Boundary context (assigned in Layer B)
-    boundary_assignment: Optional[BoundaryAssignment] = None
+    # Boundary context (assigned in Layer B — always present, even if P3_unresolved)
+    boundary_assignment: BoundaryAssignment
 
     # Location
     file_path: Optional[str] = None
@@ -289,6 +289,12 @@ class ThreatEvidence(BaseModel):
     finding_count: int = 0
     summary: str = ""
 
+    # Traceability metadata (enriched for research provenance)
+    boundary_assignment_confidence: float = 0.0
+    boundary_assignment_priority: BoundaryAssignmentPriority = BoundaryAssignmentPriority.DIRECT_MATCH
+    fusion_status: Optional[FusionStatus] = None
+    source_confidence: float = 0.0
+
 
 class StrideThreat(BaseModel):
     """
@@ -391,6 +397,12 @@ class CausalTMv3Result(BaseModel):
 
     # Remediation
     roadmap: Optional[RemediationRoadmap] = None
+
+    # Attack paths (from graph traversal, queried post-analysis)
+    attack_paths: list[dict] = Field(default_factory=list)
+
+    # DFD model (for rendering, queried post-analysis)
+    dfd_model: Optional[dict] = None
 
     # Layer summaries
     evidence_count: int = 0
