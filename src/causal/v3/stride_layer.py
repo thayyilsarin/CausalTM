@@ -429,7 +429,7 @@ class StrideLayerV3:
             if fbp.control_category in trigger_controls:
                 # This boundary contributes to the triggering control
                 evidence_list.append(ThreatEvidence(
-                    source_type=fbp.contributing_sources[0] if fbp.contributing_sources else "sast",
+                    source_type=fbp.contributing_sources[0] if fbp.contributing_sources else SourceType.SAST,
                     boundary_id=fbp.boundary_id,
                     boundary_posture=fbp.fused_posture,
                     contributing_cwes=[],  # Would be populated from NormalizedEvidence in full pipeline
