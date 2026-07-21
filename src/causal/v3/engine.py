@@ -24,6 +24,7 @@ from src.causal.v3.repo_subdag import RepoSubDAGV3
 from src.causal.v3.fusion import FusionLayerV3
 from src.causal.v3.master_dag import MasterDAGV3
 from src.causal.v3.stride_layer import StrideLayerV3
+from src.causal.v3.remediation import RemediationPlannerV3
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +47,10 @@ class CausalTMv3Engine:
         self._fusion = FusionLayerV3()
         self._master_dag = MasterDAGV3()
         self._stride_layer = StrideLayerV3()
+        self._remediation_planner = RemediationPlannerV3()
         self._component_graph: Optional[dict] = None
         self._fusion_output: Optional[FusionLayerOutput] = None
+        self._all_evidence: list = []
         self._result: Optional[CausalTMv3Result] = None
 
     def analyze(
@@ -149,6 +152,14 @@ class CausalTMv3Engine:
         )
         logger.info(f"  Threats generated: {len(threats)}")
 
+        # ── Layer G: Remediation Roadmap ──
+        logger.info("[Layer G] Generating remediation roadmap...")
+        self._all_evidence = all_evidence
+        roadmap = self._remediation_planner.generate_roadmap(
+            self._fusion_output, self._master_dag, all_evidence
+        )
+        logger.info(f"  Roadmap: {roadmap.total_steps} steps, risk {roadmap.initial_risk:.3f} → {roadmap.projected_final_risk:.3f}")
+
         # ── Build Result ──
         boundaries_assessed = list(set(
             bp.boundary_id for bp in boundary_postures
@@ -161,6 +172,7 @@ class CausalTMv3Engine:
             stride_posture_per_category=stride_postures,
             overall_risk=overall_risk,
             risk_rating=self._risk_to_rating(overall_risk),
+            roadmap=roadmap,
             evidence_count=len(all_evidence),
             boundary_count=len(boundaries_assessed),
             boundaries_assessed=boundaries_assessed,

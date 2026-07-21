@@ -15,10 +15,10 @@
     "evidence_count": 33,
     "boundary_count": 4,
     "boundaries_assessed": [
-      "tb-dmz",
-      "tb-internet",
       "global/unresolved",
-      "tb-internal"
+      "tb-dmz",
+      "tb-internal",
+      "tb-internet"
     ],
     "uncertain_divergences": 5,
     "average_confidence": 0.6769000000000001
@@ -123,8 +123,8 @@
       "confidence": 0.802,
       "affected_boundaries": [
         "tb-dmz",
-        "tb-internet",
-        "tb-internal"
+        "tb-internal",
+        "tb-internet"
       ],
       "triggering_posture": 0.7045
     }
