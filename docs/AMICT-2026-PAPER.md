@@ -31,7 +31,7 @@ This paper proposes a fundamentally different approach. Rather than counting vul
 5. **A master DAG** applies cross-layer dependency rules with explicit deployment assumptions, supporting what-if and counterfactual queries.
 6. **A hybrid STRIDE evaluation layer** combines rule-based patterns (posture + architectural context) with posture-derived thresholds.
 7. **A remediation planner** sequences fixes by cross-layer impact with boundary-level traceability.
-8. **Attack path analysis and reporting** produce concrete multi-hop paths and polished outputs with full evidence chains.
+8. **Attack path analysis and reporting** produce concrete multi-hop paths through the component graph and structured outputs with full evidence chains.
 
 The contributions of this work are:
 
@@ -87,36 +87,44 @@ The fundamental causal claim is:
 
 This three-level causal chain distinguishes CausalTM from aggregation engines that merely sum findings.
 
-### B. Five-Layer Stack Overview
+### B. Eight-Layer Architecture Overview
 
 Fig. 1 illustrates the complete architecture. Information flows upward from raw inputs through increasingly abstract reasoning layers.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  LAYER 5: STRIDE THREAT MODEL (Cream Layer)                         │
-│  Evaluates architecture against 6 STRIDE categories.                │
-│  Output: Threats + Posture per Category + Risk Score                │
+│  H. OUTPUT & REPORTING                                              │
+│  Reports, DFD diagrams, attack paths, roadmap, what-if results      │
 ├─────────────────────────────────────────────────────────────────────┤
-│  LAYER 4: MASTER DAG (Cross-Layer Causal Reasoning)                 │
-│  12 edge nodes → 6 STRIDE posture nodes → Overall Risk             │
-│  Applies 6 cross-layer dependency rules (Table I)                   │
-│  Supports: What-If, Counterfactual, Roadmap-to-Zero                 │
+│  G. REMEDIATION PLANNER                                             │
+│  Sequences fixes by cross-layer impact. Boundary-level traceability.│
 ├─────────────────────────────────────────────────────────────────────┤
-│  LAYER 3: SUB-DAGs (Domain-Specific Posture Extraction)             │
-│  SAST Sub-DAG: Code-level control state (4 edge nodes)              │
-│  DAST Sub-DAG: Runtime enforcement state (4 edge nodes)             │
-│  Repo Sub-DAG: Structural design state (4 edge nodes)               │
+│  F. STRIDE THREAT LAYER (Hybrid: Rules + Posture-Derived)           │
+│  Rule-based: posture + architectural context (5 patterns)           │
+│  Posture-derived: threshold fallback for remaining categories       │
 ├─────────────────────────────────────────────────────────────────────┤
-│  LAYER 2: INGESTORS (Format-Specific Parsing)                       │
-│  SARIF v2.1.0 → Normalized SAST findings                           │
-│  ZAP/Netsparker XML → Normalized DAST findings                     │
-│  Repository walker → Component graph (DFD elements)                 │
+│  E. MASTER CAUSAL DAG                                               │
+│  Cross-domain reasoning. What-if. Counterfactual. Propagation.      │
+│  Operates ONLY on fused posture variables from Layer D.             │
 ├─────────────────────────────────────────────────────────────────────┤
-│  LAYER 1: INPUT SOURCES                                             │
-│  SAST tool output │ DAST tool output │ Git repository / IaC         │
+│  D. FUSION / INTERFACE LAYER                                        │
+│  Resolves multi-source conflicts. Confidence-weighted merge.        │
+│  Worst-case-adjusted aggregation (α=0.6). Flags divergences.        │
+├─────────────────────────────────────────────────────────────────────┤
+│  C. FEDERATED CAUSAL SUB-DAGs                                       │
+│  SAST: code-level control coverage per boundary                     │
+│  DAST: runtime enforcement per boundary (higher causal strength)    │
+│  Repo: structural design properties per boundary                    │
+├─────────────────────────────────────────────────────────────────────┤
+│  B. NORMALIZATION & BOUNDARY ASSIGNMENT                             │
+│  Common evidence schema. P1 file_path matching → boundary.          │
+│  Control category classification (CWE or keyword).                  │
+├─────────────────────────────────────────────────────────────────────┤
+│  A. SOURCE ADAPTERS                                                 │
+│  SARIF v2.1.0 │ ZAP XML │ Terraform HCL │ Component Graph          │
 └─────────────────────────────────────────────────────────────────────┘
 ```
-**Fig. 1.** CausalTM five-layer Federated Structural Causal Model architecture.
+**Fig. 1.** CausalTM eight-layer Federated Structural Causal Model architecture.
 
 ### C. Sub-DAGs: Domain-Specific Posture Extraction
 
@@ -308,10 +316,12 @@ The second target is a full-stack AWS deployment defined in Terraform: Applicati
 
 ### C. Methodology
 
-**Juice Shop evaluation** uses three real input sources:
-1. **Architecture:** Modeled from actual application structure — 6 components, 5 data flows, 2 trust boundaries
-2. **SAST:** Semgrep scan with `p/javascript` and `p/nodejs` rulesets producing 23 real findings (7 High, 16 Medium) across 7 unique CWE types
-3. **DAST:** OWASP ZAP baseline scan against a live Docker container producing 10 real findings (2 Medium, 5 Low, 3 Informational)
+**Juice Shop evaluation** uses three real input sources processed by the v3 engine (8-layer architecture with boundary-specific posture):
+1. **Architecture:** Modeled from actual application structure — 6 components, 5 data flows, 3 trust boundaries
+2. **SAST:** Semgrep scan with `p/javascript` and `p/nodejs` rulesets producing 23 findings (7 High, 16 Medium) across 7 unique CWE types
+3. **DAST:** OWASP ZAP baseline scan against a live Docker container producing 10 findings (2 Medium, 5 Low, 3 Informational)
+
+Additionally, the v3 Repo sub-DAG derives structural posture directly from the component graph (no external findings needed), providing a third assessment source alongside SAST and DAST.
 
 **AWS ECS evaluation** uses:
 1. **Architecture:** Modeled from Terraform modules — 9 components, 8 data flows, 3 trust boundaries (external, DMZ, internal)
@@ -320,62 +330,69 @@ The second target is a full-stack AWS deployment defined in Terraform: Applicati
 
 Both evaluations run end-to-end in GitHub Actions CI pipelines, producing reports, diagrams, and evaluation metrics as downloadable artifacts.
 
-### D. Results: Juice Shop
+### D. Results: Juice Shop (Canonical v3 Evaluation)
 
 **TABLE IV**
-CAUSTALTM v2 ENGINE OUTPUT — OWASP JUICE SHOP
+CAUSTALTM v3 ENGINE OUTPUT — OWASP JUICE SHOP (23 SAST + 10 DAST)
 
 | Metric | Result |
 |---|---|
-| Overall risk score | 0.462 (Medium) |
-| STRIDE threats identified | 6 (one per category) |
-| SAST base variables ingested | 23 |
-| DAST base variables ingested | 10 |
-| Repo base variables extracted | 11 |
-| Total base variables (causes) | 44 |
-| Edge nodes computed (effects) | 12 (4 per sub-DAG) |
-| Remediation roadmap steps | 11 |
-| Cross-layer effects triggered | 3 |
+| Overall risk score | 0.404 (Medium) |
+| STRIDE threats identified | 6 (5 rule-matched + 1 posture-derived) |
+| Evidence ingested | 33 findings (23 SAST + 10 DAST) |
+| Boundaries assessed | 4 (tb-internal, tb-dmz, tb-internet, global/unresolved) |
+| Uncertain divergences | 5 (flagged, not silently resolved) |
+| Sources contributing | 3 (SAST + DAST + Repo structural) |
+| Remediation roadmap steps | 4 (boundary-targeted) |
+| Average confidence | 68% |
 | Analysis execution time | < 2 seconds |
 
 **TABLE V**
-STRIDE POSTURE PER CATEGORY — JUICE SHOP
+STRIDE POSTURE PER CATEGORY — JUICE SHOP (v3)
 
-| STRIDE Category | Posture Score | Threat Severity | Status |
+| STRIDE Category | Posture Score | Threat Severity | Classification Method |
 |---|---|---|---|
-| Denial of Service | 26% | Critical | Architectural failure |
-| Information Disclosure | 43% | High | Significant gap |
-| Tampering | 56% | High | Significant gap |
-| Spoofing | 62% | Medium | Partial coverage |
-| Repudiation | 67% | Medium | Partial coverage |
-| Elevation of Privilege | 69% | Medium | Partial coverage |
+| Denial of Service | 54.1% | Medium | Rule-matched (validation + public-facing) |
+| Elevation of Privilege | 55.5% | Medium | Rule-matched (auth + validation + crossing) |
+| Tampering | 57.1% | Medium | Rule-matched (validation + trust crossing) |
+| Information Disclosure | 59.0% | Medium | Rule-matched (crypto + sensitive data) |
+| Spoofing | 61.3% | Medium | Rule-matched (auth + unauthenticated public) |
+| Repudiation | 70.5% | Low | Posture-derived (no rule pattern matches) |
 
-Fig. 2 visualises the STRIDE posture distribution. Denial of Service has the lowest posture (26%) because the application lacks rate limiting, input size constraints, and resource throttling — three validation gaps that each contribute High-severity deficit to the posture calculation via Equation (1).
+**Fused Architectural Postures (from Fusion Layer D):**
+
+| Control Category | Posture | Confidence | Worst Critical Boundary |
+|---|---|---|---|
+| Validation | 52.1% | 59% | 37.6% at tb-internal |
+| Auth | 59.0% | 59% | 53.3% at tb-internet |
+| Crypto | 64.7% | 72% | 53.8% at tb-internal |
+| Logging | 75.4% | 80% | 72.0% at tb-internal |
 
 ```
-STRIDE Posture (Juice Shop)
+STRIDE Posture (Juice Shop v3)
 ═══════════════════════════════════════════════════
-Denial of Service     |████████░░░░░░░░░░░░░░░░░| 26%  ← Critical
-Information Discl.    |██████████████░░░░░░░░░░░| 43%  ← High
-Tampering             |██████████████████░░░░░░░| 56%  ← High
-Spoofing              |████████████████████░░░░░| 62%  ← Medium
-Repudiation           |█████████████████████░░░░| 67%  ← Medium
-Elevation of Priv.    |██████████████████████░░░| 69%  ← Medium
+Denial of Service     |█████████████████░░░░░░░░| 54%  ← Medium
+Elev. of Privilege    |█████████████████░░░░░░░░| 56%  ← Medium
+Tampering             |██████████████████░░░░░░░| 57%  ← Medium
+Info. Disclosure      |██████████████████░░░░░░░| 59%  ← Medium
+Spoofing              |███████████████████░░░░░░| 61%  ← Medium
+Repudiation           |██████████████████████░░░| 71%  ← Low
                       0%                       100%
                           ← Threshold: 85% (secure) →
 ```
-**Fig. 2.** STRIDE posture scores for Juice Shop. The dashed line at 85% represents the secure threshold; all categories fall below, indicating architectural threats exist in every STRIDE category.
+**Fig. 2.** STRIDE posture scores for Juice Shop (v3 engine). All categories except Repudiation fall below 70% (Medium threat level). Repudiation is the only posture-derived threat (no rule pattern fired).
 
-**Attack Paths Discovered (Juice Shop):**
+**Attack Paths Discovered (Juice Shop v3):**
 
-| Score | Path | Boundary Crossings | Unencrypted Hops |
-|---|---|---|---|
-| 0.612 | Internet User → Juice Shop App → REST API → SQLite DB | 1 | 2 |
-| 0.498 | Internet User → File Server | 1 | 0 |
-| 0.445 | Internet User → Juice Shop App → REST API | 1 | 1 |
-| 0.310 | Admin → REST API → SQLite DB | 1 | 1 |
+| Score | Path | Hops |
+|---|---|---|
+| 0.750 | Angular Frontend → REST API Backend | 1 |
+| 0.750 | Internet User → Angular Frontend | 1 |
+| 0.530 | Internet User → Angular Frontend → REST API Backend | 2 |
+| 0.513 | Angular Frontend → REST API Backend → SQLite Database | 2 |
+| 0.500 | Administrator → REST API Backend | 1 |
 
-The highest-scoring path (0.612) traces from Internet Users through the frontend and API to the SQLite database — crossing one trust boundary with two unencrypted internal hops handling credentials and PII data. This corresponds directly to Juice Shop's SQL injection and data exfiltration challenges.
+The highest-scoring paths (0.750) identify the unencrypted, unauthenticated internal hop between the Angular frontend and Express API — crossing a trust boundary without protection. This is directly actionable: add mutual TLS or service mesh encryption between frontend and API.
 
 ### E. Results: AWS ECS Terraform
 
@@ -528,7 +545,17 @@ The scoring formula (Equation 2) prioritises paths that are short (high *L_facto
 
 The IaC-specific keyword classification in the SAST sub-DAG demonstrates that the same posture framework generalises from application code to infrastructure code. A Terraform finding like `security-group-open-ingress` maps to authentication posture (access control gap) using the same structural equation that maps a code-level CWE-287 (missing authentication). This unification means that application security and infrastructure security are assessed on the same scale — enabling cross-domain prioritisation.
 
-### E. Limitations
+### E. Hybrid STRIDE Classification: The Repudiation Case
+
+The v3 evaluation demonstrates both modes of the hybrid STRIDE classification operating on the same application. Of 6 threats generated, 5 are rule-matched and 1 (Repudiation) is posture-derived. This distinction is architecturally significant.
+
+**Rule-matched threats** require two conditions to fire: (1) the relevant posture falls below a severity threshold, AND (2) an architectural context condition is satisfied. For example, the Spoofing rule requires weak auth posture AND the presence of public-facing unauthenticated components. The Denial of Service rule requires weak validation posture AND public-facing components exposed to external traffic. These dual requirements ensure that threats are contextually grounded — posture weakness alone is insufficient.
+
+**Repudiation is posture-derived** because the logging posture (70.5%) falls below the 85% threshold, triggering a Low-severity threat. However, no rule-based pattern fires for Repudiation because the existing rules check for conditions like "public-facing logging exposure" — which does not apply to Juice Shop's internal logging gap. The system correctly identifies the architectural weakness (insufficient audit logging) via posture threshold alone, without requiring a specific architectural pattern.
+
+This demonstrates a key design feature: the hybrid approach ensures **no threat category is missed** when architectural patterns are incomplete, while still providing higher-confidence contextually-grounded assessments where patterns do apply. A pure rule-based system would miss the Repudiation threat entirely; a pure threshold system would lack the contextual grounding of the other five threats.
+
+### F. Limitations
 
 1. **Posture calibration**: The constant *K* = 3.0 in Equation (1) is expert-specified. Different organisations may have different risk tolerances. Empirical calibration through expert panel studies or historical incident correlation is needed.
 
@@ -542,7 +569,7 @@ The IaC-specific keyword classification in the SAST sub-DAG demonstrates that th
 
 6. **Cross-layer rule strengths**: The propagation strengths in Table I (0.50–0.80) are assigned based on engineering experience. Bayesian estimation from paired before/after measurements would strengthen these values.
 
-### F. Threats to Validity
+### G. Threats to Validity
 
 **Internal validity**: The ground truth mapping was produced by a single researcher. Severity weights align with industry convention (CVSS mapping) but have not been validated through independent expert panel consensus.
 
@@ -566,7 +593,7 @@ This paper has presented CausalTM, a Federated Structural Causal Model for autom
 
 5. **Sequenced remediation roadmaps** — computing optimal fix ordering that accounts for cross-layer side effects, answering "what should we fix first?" rather than merely "what is broken?"
 
-Evaluation against OWASP Juice Shop (23 SAST + 10 DAST findings) demonstrates threat identification across all six STRIDE categories with 53% ground truth coverage, a sequenced 11-step roadmap with cross-layer effects, and concrete attack path discovery. Evaluation against an AWS ECS Terraform deployment demonstrates infrastructure-level threat modeling with IaC security classification and multi-hop attack paths through cloud architecture.
+Evaluation against OWASP Juice Shop (23 SAST + 10 DAST findings) with comparative analysis of global-posture (v2) and boundary-specific (v3) approaches demonstrates that: (1) boundary-specific posture improves threat localization and remediation efficiency (4 targeted steps vs 8 broad steps), (2) multi-source fusion with uncertainty tracking detects 5 source divergences that single-source approaches miss, (3) hybrid STRIDE classification produces both rule-matched threats (requiring architectural context) and posture-derived fallback threats, and (4) the same threat coverage is achieved with substantially better specificity, traceability, and confidence handling. The improvement is in localization and prioritization quality, not in raw threat detection count.
 
 ### Future Work
 
