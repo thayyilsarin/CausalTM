@@ -9,122 +9,124 @@
     "trust_boundaries": 3
   },
   "results": {
-    "overall_risk": 0.4446,
+    "overall_risk": 0.4042,
     "risk_rating": "Medium",
     "total_threats": 6,
     "evidence_count": 33,
-    "boundary_count": 3,
+    "boundary_count": 4,
     "boundaries_assessed": [
-      "tb-internal",
+      "tb-dmz",
+      "tb-internet",
       "global/unresolved",
-      "tb-dmz"
+      "tb-internal"
     ],
-    "uncertain_divergences": 1,
-    "average_confidence": 0.60335
+    "uncertain_divergences": 5,
+    "average_confidence": 0.6769000000000001
   },
   "stride_posture": {
-    "Spoofing": 0.7355,
-    "Tampering": 0.4517,
-    "Repudiation": 0.7421,
-    "Information Disclosure": 0.528,
-    "Denial of Service": 0.3901,
-    "Elevation of Privilege": 0.4847
+    "Spoofing": 0.6126,
+    "Tampering": 0.5711,
+    "Repudiation": 0.7045,
+    "Information Disclosure": 0.59,
+    "Denial of Service": 0.5415,
+    "Elevation of Privilege": 0.5553
   },
   "fused_postures": {
     "validation": {
-      "posture": 0.2482,
-      "confidence": 0.6167,
-      "worst_critical": 0.0,
+      "posture": 0.5207,
+      "confidence": 0.5938,
+      "worst_critical": 0.3757,
       "worst_critical_id": "tb-internal"
     },
     "auth": {
-      "posture": 0.7212,
-      "confidence": 0.5367,
-      "worst_critical": 0.6333,
-      "worst_critical_id": "tb-internal"
+      "posture": 0.5899,
+      "confidence": 0.5938,
+      "worst_critical": 0.5333,
+      "worst_critical_id": "tb-internet"
     },
     "crypto": {
-      "posture": 0.7569,
-      "confidence": 0.63,
-      "worst_critical": 0.7333,
+      "posture": 0.6467,
+      "confidence": 0.7183,
+      "worst_critical": 0.5376,
       "worst_critical_id": "tb-internal"
     },
     "logging": {
-      "posture": 0.751,
-      "confidence": 0.63,
-      "worst_critical": 0.7333,
+      "posture": 0.7536,
+      "confidence": 0.8017,
+      "worst_critical": 0.7203,
       "worst_critical_id": "tb-internal"
     }
   },
   "threats": [
     {
       "category": "Spoofing",
-      "severity": "Low",
+      "severity": "Medium",
       "classification_method": "rule_matched",
-      "confidence": 0.617,
+      "confidence": 0.683,
       "affected_boundaries": [
         "tb-internet",
         "tb-dmz"
       ],
-      "triggering_posture": 0.7355
+      "triggering_posture": 0.6126
     },
     {
       "category": "Tampering",
-      "severity": "High",
+      "severity": "Medium",
       "classification_method": "rule_matched",
-      "confidence": 0.709,
+      "confidence": 0.683,
       "affected_boundaries": [
         "tb-internet",
         "tb-dmz",
         "tb-internal"
       ],
-      "triggering_posture": 0.4517
+      "triggering_posture": 0.5711
     },
     {
       "category": "Information Disclosure",
       "severity": "Medium",
       "classification_method": "rule_matched",
-      "confidence": 0.724,
+      "confidence": 0.826,
       "affected_boundaries": [
         "tb-internet",
         "tb-dmz",
         "tb-internal"
       ],
-      "triggering_posture": 0.528
+      "triggering_posture": 0.59
     },
     {
       "category": "Denial of Service",
-      "severity": "High",
+      "severity": "Medium",
       "classification_method": "rule_matched",
-      "confidence": 0.709,
+      "confidence": 0.683,
       "affected_boundaries": [
         "tb-internet",
         "tb-dmz"
       ],
-      "triggering_posture": 0.3901
+      "triggering_posture": 0.5415
     },
     {
       "category": "Elevation of Privilege",
-      "severity": "High",
+      "severity": "Medium",
       "classification_method": "rule_matched",
-      "confidence": 0.663,
+      "confidence": 0.683,
       "affected_boundaries": [
         "tb-internet",
         "tb-dmz",
         "tb-internal"
       ],
-      "triggering_posture": 0.4847
+      "triggering_posture": 0.5553
     },
     {
       "category": "Repudiation",
       "severity": "Low",
       "classification_method": "posture_derived",
-      "confidence": 0.63,
+      "confidence": 0.802,
       "affected_boundaries": [
-        "tb-internal",
-        "tb-dmz"
+        "tb-dmz",
+        "tb-internet",
+        "tb-internal"
       ],
-      "triggering_posture": 0.7421
+      "triggering_posture": 0.7045
     }
   ],
   "attack_paths": [
@@ -156,12 +158,12 @@
   ],
   "what_if": {
     "fix_validation": {
-      "risk_before": 0.4446,
-      "risk_after": 0.1627
+      "risk_before": 0.4042,
+      "risk_after": 0.2244
     },
     "fix_auth": {
-      "risk_before": 0.4446,
-      "risk_after": 0.3657
+      "risk_before": 0.4042,
+      "risk_after": 0.288
     }
   }
 }

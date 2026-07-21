@@ -20,6 +20,7 @@ from src.causal.v3.models import (
 from src.causal.v3.normalization import NormalizationLayerV3
 from src.causal.v3.sast_subdag import SASTSubDAGV3
 from src.causal.v3.dast_subdag import DASTSubDAGV3
+from src.causal.v3.repo_subdag import RepoSubDAGV3
 from src.causal.v3.fusion import FusionLayerV3
 from src.causal.v3.master_dag import MasterDAGV3
 from src.causal.v3.stride_layer import StrideLayerV3
@@ -41,6 +42,7 @@ class CausalTMv3Engine:
         self._normalization = NormalizationLayerV3()
         self._sast_subdag = SASTSubDAGV3()
         self._dast_subdag = DASTSubDAGV3()
+        self._repo_subdag = RepoSubDAGV3()
         self._fusion = FusionLayerV3()
         self._master_dag = MasterDAGV3()
         self._stride_layer = StrideLayerV3()
@@ -113,7 +115,11 @@ class CausalTMv3Engine:
             boundary_postures.extend(dast_postures)
             logger.info(f"  DAST sub-DAG: {len(dast_postures)} boundary postures")
 
-        # Future: Repo sub-DAG would add structural postures here
+        # Repo sub-DAG (derives posture from component graph structure)
+        self._repo_subdag.build_from_graph(component_graph)
+        repo_postures = self._repo_subdag.compute_boundary_postures()
+        boundary_postures.extend(repo_postures)
+        logger.info(f"  Repo sub-DAG: {len(repo_postures)} boundary postures")
 
         # ── Layer D: Fusion ──
         logger.info("[Layer D] Fusing boundary postures into architectural posture...")
