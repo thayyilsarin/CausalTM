@@ -102,8 +102,10 @@ def run_v3():
                 "confidence": t.confidence,
                 "layers_confirming": t.layers_contributing,
                 "affected_boundaries": t.affected_boundaries,
+                "primary_boundary": t.affected_boundaries[0] if t.affected_boundaries else "unknown",
                 "boundary_specific": True,
                 "classification_method": t.classification_method.value,
+                "triggering_posture": t.triggering_posture_value,
             }
             for t in result.threats
         ],
@@ -168,33 +170,33 @@ def compare(v2_result, v3_result):
             v3_boundaries.add(b)
     diffs.append({
         "aspect": "Boundary localization",
-        "v2": "All threats attributed to 'Architecture' (global)",
+        "v2": "All threats attributed to global 'Architecture' (no boundary distinction)",
         "v3": f"Threats localized to specific boundaries: {sorted(v3_boundaries)}",
-        "improvement": "v3 tells you WHERE to fix, not just WHAT to fix",
+        "improvement": "v3 identifies WHERE the weakness exists, enabling targeted remediation",
     })
 
     # 2. Over-generalization
     diffs.append({
         "aspect": "Over-generalization avoidance",
-        "v2": "1 SQLi finding reduces validation posture for entire system by 23%",
-        "v3": "1 SQLi finding reduces validation posture ONLY at tb-internal by 23%. Other boundaries unaffected.",
-        "improvement": "v3 avoids 'whole system is weak' false generalization",
+        "v2": "Global aggregation can overgeneralize: a single finding affects system-wide posture",
+        "v3": "Boundary-specific posture: findings affect only the boundary where they were observed. Other boundaries retain full posture.",
+        "improvement": "v3 avoids false generalization of localized weaknesses to the entire system",
     })
 
     # 3. Confidence handling
     diffs.append({
         "aspect": "Confidence and uncertainty",
-        "v2": "No confidence tracking. All assessments presented as equally certain.",
-        "v3": f"Confidence tracked per layer. Single-source penalty applied. {v3_result['uncertain_divergences']} divergences flagged.",
-        "improvement": "v3 communicates uncertainty, enabling better decision-making",
+        "v2": "No confidence tracking. All assessments presented with equal certainty.",
+        "v3": f"Confidence tracked per layer. Single-source penalty (x0.7) applied. {v3_result['uncertain_divergences']} source divergences flagged.",
+        "improvement": "v3 communicates epistemic uncertainty, supporting risk-informed decisions",
     })
 
     # 4. Classification method
     diffs.append({
         "aspect": "Threat classification approach",
-        "v2": "Pure threshold on global posture",
-        "v3": f"Hybrid: {comparison['comparison']['classification_methods_v3']}. Rules check architectural context (public-facing, trust crossing, sensitive data).",
-        "improvement": "v3 threats are contextually grounded, not just threshold-derived",
+        "v2": "Pure threshold on global posture (no architectural context considered)",
+        "v3": f"Hybrid: {comparison['comparison']['classification_methods_v3']}. Rules combine posture weakness with architectural context (public-facing components, trust boundary crossings, sensitive data flows).",
+        "improvement": "v3 threats are contextually grounded — posture weakness alone is insufficient; architectural exposure must also exist",
     })
 
     # 5. Worst-case awareness
@@ -202,10 +204,27 @@ def compare(v2_result, v3_result):
         val_posture = v3_result["fused_postures"].get("validation", {})
         diffs.append({
             "aspect": "Worst-case boundary awareness",
-            "v2": "Simple average across all findings",
-            "v3": f"α=0.6 weighted avg + (1-α) worst-critical. Validation worst={val_posture.get('worst_critical', 'N/A')} at {val_posture.get('worst_critical_id', 'N/A')}",
+            "v2": "Simple severity-weighted average across all findings",
+            "v3": f"Risk-averse aggregation: alpha=0.6 weighted avg + (1-alpha) worst-critical boundary. Validation worst={val_posture.get('worst_critical', 'N/A')} at {val_posture.get('worst_critical_id', 'N/A')}",
             "improvement": "v3 prevents dilution of severe local risk by safe internal boundaries",
         })
+
+    # Add methodological notes
+    comparison["methodology_notes"] = {
+        "traceability_depth": "Design-based measure (not runtime-computed). v2: finding→posture→STRIDE (2 abstractions). v3: finding→boundary_posture→fused_posture→STRIDE (4 abstractions).",
+        "classification_modes": "In this Juice Shop run, all v3 threats are rule_matched because architectural context (public-facing components, trust crossings, sensitive data) was strong enough to satisfy rule conditions for all triggered categories. Posture-derived mode would fire for categories where rules do not match (e.g., if no public-facing components existed for DoS, threshold-only assessment would apply).",
+        "threat_count_parity": "Equal threat count (5 v2, 5 v3) is expected because the same posture weaknesses trigger both engines. The improvement is in localization and confidence, not raw detection count.",
+        "rq1_claim": "Boundary-specific posture improves threat LOCALIZATION and REMEDIATION PRIORITIZATION over global posture. This evaluation does not claim improved raw detection recall.",
+    }
+
+    # Add limitations
+    comparison["limitations"] = [
+        "Single evaluation target (Juice Shop). Generalizability to enterprise applications needs validation.",
+        "v3 primarily triggered rule-matched threats because architectural context was strong enough for all categories. A system without public-facing components would demonstrate posture-derived fallback.",
+        "Traceability depth is a design-based measure, not a runtime-computed metric.",
+        "Threat severity differences between v2 and v3 reflect different posture aggregation approaches rather than inherently better/worse detection.",
+        "The evaluation uses the same fixture findings (7 SAST + 3 DAST). Real-world Semgrep/ZAP scans would produce more findings and potentially different boundary distributions.",
+    ]
 
     return comparison
 
@@ -340,6 +359,33 @@ def write_markdown_summary(comparison, path):
         lines.append(f"- **v3:** {diff['v3']}")
         lines.append(f"- **Improvement:** {diff['improvement']}")
         lines.append("")
+
+    # Methodology notes
+    lines.extend([
+        "## Methodology Notes",
+        "",
+    ])
+    for key, note in comparison.get("methodology_notes", {}).items():
+        lines.append(f"- **{key}:** {note}")
+    lines.append("")
+
+    # Limitations
+    lines.extend([
+        "## Limitations",
+        "",
+    ])
+    for lim in comparison.get("limitations", []):
+        lines.append(f"- {lim}")
+    lines.append("")
+
+    # RQ1 claim
+    lines.extend([
+        "## RQ1 Supported Claim",
+        "",
+        "> Boundary-specific posture improves threat LOCALIZATION and REMEDIATION PRIORITIZATION over global posture.",
+        "> This evaluation demonstrates improved specificity, traceability, and uncertainty handling — not improved raw detection count.",
+        "",
+    ])
 
     path.write_text("\n".join(lines), encoding="utf-8")
     print(f"  Markdown summary: {path}")
