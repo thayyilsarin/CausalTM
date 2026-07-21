@@ -213,7 +213,14 @@ class CausalGraphRenderer:
                     for en in edge_nodes:
                         # Label clearly shows: source + name + value
                         is_observed = en.metadata.get("observed", "True") == "True"
-                        short_name = en.name.replace(f'{en.layer.upper()} ', '').replace('DAST ', '').replace('SAST ', '').replace('Architecture ', '')
+                        short_name = en.name.replace(f'{en.layer.upper()} ', '').replace('DAST ', '').replace('SAST ', '').replace('Architecture ', '').replace('Repo ', '')
+                        # Clean up any ID-like prefixes that leak into display names
+                        if short_name.startswith(f"{en.layer}."):
+                            short_name = short_name[len(en.layer) + 1:]
+                        # Convert underscores to spaces and title-case
+                        short_name = short_name.replace("_", " ").strip()
+                        if short_name and short_name[0].islower():
+                            short_name = short_name.title()
 
                         if is_observed and en.value > 0.001:
                             label = f"[{en.layer.upper()}]\\n{short_name}\\n= {en.value:.2f}"
@@ -565,7 +572,11 @@ class CausalGraphRenderer:
             return f"Coverage:\\n{attrs.get('coverage_type', 'unknown')}"
 
         if node_type == "edge_node":
-            return node_id.replace(".", "\\n").replace("_", " ").title()
+            # Clean up: "repo.topology_exposure" → "Topology Exposure"
+            clean = node_id
+            if "." in clean:
+                clean = clean.split(".", 1)[1]  # Remove layer prefix
+            return clean.replace("_", " ").title()
 
         if node_type == "base_variable":
             # v2 base variable

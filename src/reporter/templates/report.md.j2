@@ -77,10 +77,10 @@
 {% if counterfactuals %}
 ## 5. Mitigation Recommendations (Counterfactual Analysis)
 
-| Intervention | Effectiveness | Paths Blocked | Recommendation |
-|-------------|--------------|---------------|----------------|
+| Intervention | Recommendation | Risk Reduction |
+|-------------|----------------|----------------|
 {% for cf in counterfactuals %}
-| {{ cf.intervention_name }} | {{ "%.0f"|format(cf.effectiveness * 100) }}% | {{ cf.paths_blocked }}/{{ cf.paths_before }} | {{ cf.recommendation }} |
+| {{ cf.intervention }} | {{ cf.recommendation }} | {{ "%.0f"|format(cf.risk_reduction_pct) }}% |
 {% endfor %}
 
 {% endif %}

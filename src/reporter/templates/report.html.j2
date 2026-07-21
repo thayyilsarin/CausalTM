@@ -307,7 +307,7 @@
                 {% for path in attack_paths[:10] %}
                 <tr>
                     <td><strong>{{ "%.2f"|format(path.score) }}</strong></td>
-                    <td>{{ path.path_names | join(' &rarr; ') }}</td>
+                    <td>{{ path.node_names | join(' &rarr; ') if path.node_names else (path.path_names | join(' &rarr; ') if path.path_names else '-') }}</td>
                     <td>{{ 'Yes' if path.crosses_trust_boundary else 'No' }}</td>
                     <td>{{ 'Yes' if path.has_confirmed_steps else 'No' }}</td>
                 </tr>
