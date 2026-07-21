@@ -1,0 +1,167 @@
+{
+  "project": "OWASP Juice Shop",
+  "engine": "CausalTM v3",
+  "inputs": {
+    "sast_findings": 23,
+    "dast_findings": 10,
+    "components": 6,
+    "data_flows": 5,
+    "trust_boundaries": 3
+  },
+  "results": {
+    "overall_risk": 0.4446,
+    "risk_rating": "Medium",
+    "total_threats": 6,
+    "evidence_count": 33,
+    "boundary_count": 3,
+    "boundaries_assessed": [
+      "tb-internal",
+      "global/unresolved",
+      "tb-dmz"
+    ],
+    "uncertain_divergences": 1,
+    "average_confidence": 0.60335
+  },
+  "stride_posture": {
+    "Spoofing": 0.7355,
+    "Tampering": 0.4517,
+    "Repudiation": 0.7421,
+    "Information Disclosure": 0.528,
+    "Denial of Service": 0.3901,
+    "Elevation of Privilege": 0.4847
+  },
+  "fused_postures": {
+    "validation": {
+      "posture": 0.2482,
+      "confidence": 0.6167,
+      "worst_critical": 0.0,
+      "worst_critical_id": "tb-internal"
+    },
+    "auth": {
+      "posture": 0.7212,
+      "confidence": 0.5367,
+      "worst_critical": 0.6333,
+      "worst_critical_id": "tb-internal"
+    },
+    "crypto": {
+      "posture": 0.7569,
+      "confidence": 0.63,
+      "worst_critical": 0.7333,
+      "worst_critical_id": "tb-internal"
+    },
+    "logging": {
+      "posture": 0.751,
+      "confidence": 0.63,
+      "worst_critical": 0.7333,
+      "worst_critical_id": "tb-internal"
+    }
+  },
+  "threats": [
+    {
+      "category": "Spoofing",
+      "severity": "Low",
+      "classification_method": "rule_matched",
+      "confidence": 0.617,
+      "affected_boundaries": [
+        "tb-internet",
+        "tb-dmz"
+      ],
+      "triggering_posture": 0.7355
+    },
+    {
+      "category": "Tampering",
+      "severity": "High",
+      "classification_method": "rule_matched",
+      "confidence": 0.709,
+      "affected_boundaries": [
+        "tb-internet",
+        "tb-dmz",
+        "tb-internal"
+      ],
+      "triggering_posture": 0.4517
+    },
+    {
+      "category": "Information Disclosure",
+      "severity": "Medium",
+      "classification_method": "rule_matched",
+      "confidence": 0.724,
+      "affected_boundaries": [
+        "tb-internet",
+        "tb-dmz",
+        "tb-internal"
+      ],
+      "triggering_posture": 0.528
+    },
+    {
+      "category": "Denial of Service",
+      "severity": "High",
+      "classification_method": "rule_matched",
+      "confidence": 0.709,
+      "affected_boundaries": [
+        "tb-internet",
+        "tb-dmz"
+      ],
+      "triggering_posture": 0.3901
+    },
+    {
+      "category": "Elevation of Privilege",
+      "severity": "High",
+      "classification_method": "rule_matched",
+      "confidence": 0.663,
+      "affected_boundaries": [
+        "tb-internet",
+        "tb-dmz",
+        "tb-internal"
+      ],
+      "triggering_posture": 0.4847
+    },
+    {
+      "category": "Repudiation",
+      "severity": "Low",
+      "classification_method": "posture_derived",
+      "confidence": 0.63,
+      "affected_boundaries": [
+        "tb-internal",
+        "tb-dmz"
+      ],
+      "triggering_posture": 0.7421
+    }
+  ],
+  "attack_paths": [
+    {
+      "score": 0.75,
+      "path": "Angular Frontend (SPA) \u2192 REST API Backend (Express)",
+      "hops": 1
+    },
+    {
+      "score": 0.75,
+      "path": "Internet User \u2192 Angular Frontend (SPA)",
+      "hops": 1
+    },
+    {
+      "score": 0.53,
+      "path": "Internet User \u2192 Angular Frontend (SPA) \u2192 REST API Backend (Express)",
+      "hops": 2
+    },
+    {
+      "score": 0.513,
+      "path": "Angular Frontend (SPA) \u2192 REST API Backend (Express) \u2192 SQLite Database",
+      "hops": 2
+    },
+    {
+      "score": 0.5,
+      "path": "Administrator \u2192 REST API Backend (Express)",
+      "hops": 1
+    }
+  ],
+  "what_if": {
+    "fix_validation": {
+      "risk_before": 0.4446,
+      "risk_after": 0.1627
+    },
+    "fix_auth": {
+      "risk_before": 0.4446,
+      "risk_after": 0.3657
+    }
+  }
+}
