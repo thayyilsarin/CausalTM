@@ -6,9 +6,9 @@
 
 ## Abstract
 
-Threat modeling remains largely manual despite the availability of rich automated security data from static and dynamic analysis tools. This paper introduces CausalTM, a framework that automates STRIDE-based architectural threat modeling through a five-layer Federated Structural Causal Model (FSCM). Three domain-specific causal sub-graphs extract security posture from static analysis reports (SAST), dynamic analysis findings (DAST), and repository architecture respectively. Each sub-graph computes severity-weighted posture scores representing the state of security controls rather than counting vulnerabilities. These posture scores feed a master directed acyclic graph (DAG) that applies cross-layer dependency rules and supports bidirectional propagation — predicting both the impact of a fix and what must be fixed to achieve a target posture. A STRIDE evaluation layer sits above the master DAG, identifying architectural threats from posture gaps without requiring any specific vulnerability to exist. We also introduce a graph-traversal attack path algorithm that identifies concrete multi-hop paths from external entry points to sensitive data stores, scored by boundary crossings, encryption gaps, and authentication weaknesses. We evaluate the prototype against two targets: (1) OWASP Juice Shop using real Semgrep SAST (23 findings) and OWASP ZAP DAST (10 findings), and (2) an AWS ECS Terraform deployment with real Semgrep IaC scanning. The system identifies threats across all six STRIDE categories, computes severity-weighted risk scores, discovers concrete attack paths through the component graph, and generates sequenced remediation roadmaps accounting for cross-layer side effects. Results demonstrate that posture-based causal reasoning produces actionable architectural threat intelligence that vulnerability-centric tools and correlation-based machine learning cannot provide.
+Threat modeling remains largely manual despite the availability of rich automated security data from static and dynamic analysis tools. This paper introduces CausalTM, a framework that automates STRIDE-based architectural threat modeling through a Federated Structural Causal Model (FSCM). The system employs an eight-layer architecture where source adapters, normalization, and boundary assignment feed into domain-specific causal sub-graphs that compute boundary-specific security posture — treating findings as evidence of control coverage gaps at specific architectural boundaries rather than as direct causes of global weakness. A fusion layer reconciles multi-source evidence with confidence tracking and worst-case-adjusted aggregation before a master DAG applies cross-layer dependency rules with explicit deployment assumptions. A hybrid STRIDE evaluation layer combines rule-based patterns (posture weakness + architectural context) with posture-derived thresholds to classify threats with full evidence traceability. We evaluate two versions of the prototype against OWASP Juice Shop: (1) a global-posture approach (v2) and (2) a boundary-specific approach (v3) using the same inputs. Results demonstrate that boundary-specific posture improves threat localization (identifying WHERE weaknesses exist, not just WHAT), provides 4-layer traceability (vs 2-layer), adds confidence tracking with single-source penalties, and enables risk-averse aggregation that prevents dilution of severe local risk. Both versions identify threats across all applicable STRIDE categories, but v3 produces contextually grounded threats (rule-matched with architectural exposure requirements) while v2 produces threshold-only classifications.
 
-**Keywords:** causal inference, STRIDE, federated structural causal model, threat modeling, automated security analysis, architectural security posture, attack path analysis, counterfactual reasoning
+**Keywords:** causal inference, STRIDE, federated structural causal model, threat modeling, automated security analysis, boundary-specific security posture, attack path analysis, counterfactual reasoning, multi-source evidence fusion
 
 ---
 
@@ -22,21 +22,24 @@ Modern development pipelines produce considerable security intelligence automati
 
 Machine learning has been proposed for vulnerability prioritisation [6], but these approaches count and rank individual vulnerabilities rather than reasoning about architecture. They cannot answer the question STRIDE actually asks: "Given this design, what can go wrong?" — a question about structure, not about individual bugs. They require historical training data [7], cannot answer interventional questions ("what happens if we fix X?") [8], and degrade as patterns shift [9].
 
-This paper proposes a fundamentally different approach. Rather than counting vulnerabilities, we extract architectural security posture from each data source. Rather than applying rules to individual components, we evaluate the complete architecture against STRIDE as a holistic assessment. Rather than producing a flat threat list, we generate a sequenced remediation roadmap that accounts for cross-layer side effects. The framework, CausalTM, employs a five-layer Federated Structural Causal Model:
+This paper proposes a fundamentally different approach. Rather than counting vulnerabilities, we extract architectural security posture from each data source. Rather than applying rules to individual components, we evaluate the complete architecture against STRIDE as a holistic assessment. Rather than producing a flat threat list, we generate a sequenced remediation roadmap that accounts for cross-layer side effects. The framework, CausalTM, employs an eight-layer Federated Structural Causal Model:
 
-1. **Input sources** (SAST reports, DAST reports, source/IaC repository) are consumed by format-specific ingestors.
-2. **Three domain-specific sub-DAGs** extract security posture as severity-weighted scores representing the state of controls — not vulnerability counts.
-3. **A master DAG** combines posture scores with cross-layer dependency rules and supports bidirectional propagation.
-4. **A STRIDE evaluation layer** identifies architectural threats from posture gaps across all six categories with multi-layer evidence.
-5. **Attack path analysis and remediation roadmap** sequence fixes for maximum cross-layer impact toward zero risk.
+1. **Source adapters** parse tool-specific outputs (SARIF, ZAP XML, Terraform HCL).
+2. **Normalization & boundary assignment** converts findings into a common evidence schema and assigns each to a specific architectural boundary.
+3. **Federated causal sub-DAGs** compute boundary-specific posture per control category (authentication, cryptography, validation, logging) — treating findings as evidence of control coverage gaps, not proof of absence.
+4. **A fusion layer** reconciles multi-source evidence with confidence-weighted merge, conflict resolution, and worst-case-adjusted aggregation (preventing dilution of severe local risk).
+5. **A master DAG** applies cross-layer dependency rules with explicit deployment assumptions, supporting what-if and counterfactual queries.
+6. **A hybrid STRIDE evaluation layer** combines rule-based patterns (posture + architectural context) with posture-derived thresholds.
+7. **A remediation planner** sequences fixes by cross-layer impact with boundary-level traceability.
+8. **Attack path analysis and reporting** produce concrete multi-hop paths and polished outputs with full evidence chains.
 
 The contributions of this work are:
 
-- A posture-based causal architecture where sub-graphs compute severity-weighted security posture (authentication, encryption, input validation, audit logging) rather than counting vulnerabilities — making threat identification independent of specific findings.
-- Cross-layer dependency rules that predict how fixing an issue in one layer (code, runtime, architecture) affects posture in other layers, enabling informed investment decisions.
-- A graph-traversal attack path algorithm that identifies concrete multi-hop paths through the Data Flow Diagram (DFD), scored by exploitability factors (boundary crossings, encryption gaps, authentication weaknesses, data sensitivity).
-- A STRIDE evaluation layer that identifies architectural threats from posture gaps with multi-layer evidence, automated CWE tracing, and three-level remediation guidance.
-- Prototype evaluation against OWASP Juice Shop (with real SAST and DAST data) and an AWS ECS Terraform deployment (with real IaC scanning), demonstrating both application-level and infrastructure-level threat modeling.
+- A boundary-specific posture architecture where findings are treated as evidence of control coverage gaps at specific architectural boundaries — not as direct causes of global weakness. This avoids false generalization of localized weaknesses to the entire system.
+- A fusion layer that reconciles multi-source evidence with confidence tracking, conflict resolution (corroboration/divergence/single-source), and worst-case-adjusted aggregation that prevents dilution of severe risk at critical boundaries.
+- Cross-layer dependency rules with explicit deployment assumptions that predict how fixing an issue in one layer (code, runtime, architecture) affects posture in other layers.
+- A hybrid STRIDE classification that requires both posture weakness AND architectural exposure (public-facing components, trust boundary crossings, sensitive data flows) — producing contextually grounded threats rather than threshold-only classifications.
+- A comparative evaluation (v2 global-posture vs v3 boundary-specific) on OWASP Juice Shop demonstrating improved threat localization, traceability, and confidence handling.
 
 
 ## II. Related Work
@@ -444,14 +447,43 @@ COMPARISON WITH EXISTING APPROACHES
 | Execution time | Days–weeks | Minutes | Minutes | < 2 seconds |
 | Cost per analysis | $15K–$50K | Tool license | Free | Free (open source) |
 
+### H. v2 vs v3 Comparative Evaluation
+
+To evaluate whether boundary-specific posture improves threat localization over global posture (RQ1), we run both v2 (global) and v3 (boundary-specific) engines on the same Juice Shop inputs.
+
+**TABLE IX**
+v2 vs v3 COMPARISON — SAME INPUTS (7 SAST + 3 DAST, 5 COMPONENTS)
+
+| Metric | v2 (Global) | v3 (Boundary-Specific) | Improvement |
+|---|---|---|---|
+| Overall Risk | 0.364 (Medium) | 0.265 (Low) | Less over-generalization |
+| Total Threats | 5 | 5 | Same coverage |
+| Boundary Specificity | Global only | Per-boundary | Localization |
+| Traceability Depth | 2 layers | 4 layers | +2 abstraction layers |
+| Confidence Tracking | None | Yes (with penalties) | Uncertainty awareness |
+| Fusion Layer | None | Yes | Multi-source reconciliation |
+| Classification | Threshold only | Hybrid rule-matched | Contextual grounding |
+| Worst-Case Aggregation | None | Yes (alpha=0.6) | Prevents dilution |
+
+**Key RQ1 findings:**
+
+1. **Boundary localization:** v3 identifies WHICH boundary is weak (e.g., "validation gap at tb-internal API boundary"), while v2 only reports "global validation weakness."
+2. **Over-generalization avoidance:** In v2, a single SQLi finding reduces validation posture for the entire system. In v3, it affects only the boundary where the finding was observed; other boundaries retain full posture.
+3. **Contextual classification:** v3 threats are all rule-matched — requiring both posture weakness AND architectural exposure (public-facing, trust crossing, sensitive data). v2 uses threshold-only classification.
+4. **Worst-case awareness:** v3's aggregation formula (alpha=0.6 weighted average + 0.4 worst-critical-boundary) ensures that a single severe gap at an external boundary is not diluted by many safe internal boundaries.
+
+**RQ1 supported claim:** Boundary-specific posture improves threat LOCALIZATION and REMEDIATION PRIORITIZATION over global posture. This evaluation demonstrates improved specificity, traceability, and uncertainty handling — the threat count is equivalent (same weaknesses detected), but the quality and actionability of information is substantially higher.
+
+**Methodology note:** In this Juice Shop run, all v3 threats are rule-matched because architectural context (public-facing components, trust boundary crossings, sensitive data flows) was strong enough to satisfy rule conditions for all triggered categories. The posture-derived fallback mode would activate for categories where architectural context is insufficient for rule matching.
+
 
 ## VI. Discussion
 
 ### A. Posture-Based Reasoning vs. Vulnerability Counting
 
-The shift from counting vulnerabilities to computing architectural posture fundamentally changes what the tool can reason about. A vulnerability counter reports "23 findings — fix them." CausalTM reports "your authentication posture is 62%, meaning 38% of the expected auth control coverage is absent — this causes a Spoofing threat regardless of which specific findings exist." This aligns with STRIDE's intent: assessing whether the *design* is adequate, not whether individual bugs exist.
+The shift from counting vulnerabilities to computing architectural posture fundamentally changes what the tool can reason about. A vulnerability counter reports "23 findings — fix them." CausalTM reports "your validation posture at the API boundary is 30%, meaning 70% of the expected validation coverage is absent at this specific trust boundary — this causes a Tampering threat because unvalidated data crosses that boundary."
 
-The severity-weighted formula (Equation 1) makes this defensible. One Critical authentication bypass (weight 1.0) reduces auth posture by 33% — more than three Low-severity header-missing findings (total weight 0.6, reducing posture by 20%). This mirrors security reality: a single critical bypass negates an entire control surface, while multiple minor issues degrade it incrementally.
+The v3 refinement — treating findings as evidence of boundary-specific control coverage gaps — makes the causal claim more precise and defensible. A single SQL injection finding does not prove the entire architecture lacks validation; it proves validation is incomplete at THAT boundary. Other boundaries where no findings exist retain full posture. This avoids the false generalization problem inherent in global aggregation approaches.
 
 ### B. Value of Cross-Layer Propagation
 
