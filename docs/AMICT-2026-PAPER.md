@@ -449,32 +449,59 @@ COMPARISON WITH EXISTING APPROACHES
 
 ### H. v2 vs v3 Comparative Evaluation
 
-To evaluate whether boundary-specific posture improves threat localization over global posture (RQ1), we run both v2 (global) and v3 (boundary-specific) engines on the same Juice Shop inputs.
+To evaluate whether boundary-specific posture improves threat localization over global posture (RQ1), we run both v2 (global) and v3 (boundary-specific) engines on the same Juice Shop inputs — 23 SAST findings from Semgrep and 10 DAST findings from OWASP ZAP.
 
 **TABLE IX**
-v2 vs v3 COMPARISON — SAME INPUTS (7 SAST + 3 DAST, 5 COMPONENTS)
+v2 vs v3 COMPARISON — SAME INPUTS (23 SAST + 10 DAST, 6 COMPONENTS, 5 FLOWS, 3 BOUNDARIES)
 
 | Metric | v2 (Global) | v3 (Boundary-Specific) | Improvement |
 |---|---|---|---|
-| Overall Risk | 0.364 (Medium) | 0.265 (Low) | Less over-generalization |
-| Total Threats | 5 | 5 | Same coverage |
-| Boundary Specificity | Global only | Per-boundary | Localization |
+| Overall Risk | 0.431 (Medium) | 0.404 (Medium) | Less over-generalization |
+| Total Threats | 6 | 6 | Same coverage |
+| Roadmap Steps | 8 | 4 | More efficient (boundary-targeted) |
+| Boundary Specificity | Global only | Per-boundary (4 assessed) | Localization |
+| Sources Used | SAST + DAST | SAST + DAST + Repo | +structural assessment |
 | Traceability Depth | 2 layers | 4 layers | +2 abstraction layers |
-| Confidence Tracking | None | Yes (with penalties) | Uncertainty awareness |
-| Fusion Layer | None | Yes | Multi-source reconciliation |
-| Classification | Threshold only | Hybrid rule-matched | Contextual grounding |
-| Worst-Case Aggregation | None | Yes (alpha=0.6) | Prevents dilution |
+| Confidence Tracking | None | Yes (avg 68%) | Uncertainty awareness |
+| Uncertain Divergences | N/A | 5 flagged | Multi-source conflict detection |
+| Fusion Layer | None | Yes (worst-case adjusted) | Prevents dilution |
+| Classification | Threshold only | Hybrid (5 rule + 1 posture-derived) | Contextual + fallback |
+
+**TABLE X**
+STRIDE POSTURE COMPARISON (23 SAST + 10 DAST)
+
+| STRIDE Category | v2 Posture | v3 Posture | Delta | Interpretation |
+|---|---|---|---|---|
+| Denial of Service | 0.353 | 0.541 | +0.188 | v3 avoids global crash from localized findings |
+| Tampering | 0.563 | 0.571 | +0.008 | Similar |
+| Spoofing | 0.571 | 0.613 | +0.042 | Repo adds positive structural signal |
+| Information Disclosure | 0.592 | 0.590 | −0.002 | Nearly identical |
+| Elevation of Privilege | 0.602 | 0.555 | −0.047 | Repo found unauthenticated exposure |
+| Repudiation | 0.733 | 0.705 | −0.028 | Repo detected logging gap |
 
 **Key RQ1 findings:**
 
-1. **Boundary localization:** v3 identifies WHICH boundary is weak (e.g., "validation gap at tb-internal API boundary"), while v2 only reports "global validation weakness."
-2. **Over-generalization avoidance:** In v2, a single SQLi finding reduces validation posture for the entire system. In v3, it affects only the boundary where the finding was observed; other boundaries retain full posture.
-3. **Contextual classification:** v3 threats are all rule-matched — requiring both posture weakness AND architectural exposure (public-facing, trust crossing, sensitive data). v2 uses threshold-only classification.
-4. **Worst-case awareness:** v3's aggregation formula (alpha=0.6 weighted average + 0.4 worst-critical-boundary) ensures that a single severe gap at an external boundary is not diluted by many safe internal boundaries.
+1. **Over-generalization avoidance (DoS):** v2 rates DoS posture as 0.353 (Critical) because all validation findings globally reduce posture. v3 rates it 0.541 (Medium) because findings are localized to tb-internal — other boundaries retain better posture and the worst-case-adjusted average is less catastrophic. This demonstrates the core v3 advantage.
+2. **Roadmap efficiency:** v2 requires 8 remediation steps; v3 requires only 4. Because v3 knows WHICH boundary is weakest, it recommends targeted fixes (e.g., "fix validation at tb-internal") rather than broad system-wide improvements.
+3. **Hybrid classification demonstrated:** v3 produces 5 rule-matched threats (posture weakness + architectural context required) and 1 posture-derived threat (Repudiation — logging posture 0.705 < 0.85 threshold, no rule pattern matches because no public-facing logging exposure). This proves both classification modes operate in practice.
+4. **Multi-source enrichment:** v3's Repo sub-DAG detects structural weaknesses invisible to SAST/DAST — unencrypted internal flows (crypto drops from 0.87 to 0.65), unauthenticated public components (auth drops from 0.77 to 0.59). The 5 uncertain divergences where sources disagree are flagged rather than silently resolved.
+5. **Boundary localization:** Every v3 threat traces to specific boundaries (tb-internal, tb-dmz, tb-internet) with confidence scores. v2 attributes all threats to global "Architecture."
 
-**RQ1 supported claim:** Boundary-specific posture improves threat LOCALIZATION and REMEDIATION PRIORITIZATION over global posture. This evaluation demonstrates improved specificity, traceability, and uncertainty handling — the threat count is equivalent (same weaknesses detected), but the quality and actionability of information is substantially higher.
+**v3 Remediation Roadmap (4 steps to zero risk):**
 
-**Methodology note:** In this Juice Shop run, all v3 threats are rule-matched because architectural context (public-facing components, trust boundary crossings, sensitive data flows) was strong enough to satisfy rule conditions for all triggered categories. The posture-derived fallback mode would activate for categories where architectural context is insufficient for rule matching.
+| Step | Fix | Boundary | Posture Change | Risk Reduction |
+|---|---|---|---|---|
+| 1 | Fix input validation | tb-internal | 52% → 100% | −0.180 |
+| 2 | Fix authentication | tb-internet | 59% → 100% | −0.116 |
+| 3 | Fix encryption | tb-internal | 65% → 100% | −0.080 |
+| 4 | Fix audit logging | tb-internal | 75% → 100% | −0.029 |
+
+**RQ1 supported claim:** Boundary-specific posture improves threat LOCALIZATION and REMEDIATION PRIORITIZATION over global posture. With the same inputs, v3 produces the same threat coverage but with: (1) boundary-level traceability, (2) 50% fewer roadmap steps (more efficient fixes), (3) hybrid classification demonstrating both modes, (4) multi-source enrichment via Repo sub-DAG, and (5) explicit uncertainty tracking.
+
+**Methodology notes:**
+- Traceability depth is a design-based measure: v2 (finding → posture → STRIDE) vs v3 (finding → boundary_posture → fused_posture → STRIDE).
+- Repudiation is posture-derived because no rule pattern requires public-facing logging exposure — the threshold alone triggers the threat. This demonstrates the hybrid fallback mechanism.
+- Equal threat count is expected; the improvement is in localization and efficiency, not raw detection.
 
 
 ## VI. Discussion
