@@ -132,7 +132,7 @@ Each sub-DAG is a self-contained structural causal model that transforms raw fin
 
 **SAST Sub-DAG** answers: "What security controls exist in the code?" Findings are classified by CWE identifier into four posture categories: authentication, cryptography, input validation, and audit logging. When CWE identifiers are unavailable (common with pattern-based tools), keyword analysis of rule titles and file paths provides classification. For IaC findings (Terraform, CloudFormation), specialised keyword sets detect infrastructure-specific security controls (security groups, encryption settings, IAM policies, WAF configuration).
 
-**DAST Sub-DAG** answers: "Are controls actually enforced at runtime?" DAST findings carry higher causal strength (0.85–0.90) than SAST findings because they represent proven runtime behaviour rather than static code patterns. When DAST has not been performed, edge nodes exist with zero values and zero causal strength — preserving graph structure for counterfactual completeness while contributing nothing to current risk assessment.
+**DAST Sub-DAG** answers: "Are controls actually enforced at runtime?" DAST findings carry higher causal strength (0.85–0.90) than SAST findings because they represent strong runtime evidence for tested paths rather than static code patterns. When DAST has not been performed, edge nodes exist with zero values and zero causal strength — preserving graph structure for counterfactual completeness while contributing nothing to current risk assessment.
 
 **Repo Sub-DAG** answers: "What is the structural design?" Architecture is extracted from deployment configurations (Docker, Kubernetes, Terraform), API specifications, environment files, and code structure. Posture scores capture: topology exposure (public-facing surface area), data sensitivity (credential and PII handling), trust boundary integrity (enforcement at boundaries), and defense-in-depth (layered controls).
 
@@ -192,15 +192,15 @@ SAST findings are ingested via a SARIF v2.1.0 parser compatible with Semgrep, Co
 
 ### B. Posture Computation: The Structural Equation
 
-The core posture computation is a structural equation in the causal sense — it defines a deterministic functional relationship between causes (findings) and effect (posture state):
+The core posture computation defines a deterministic functional relationship between evidence (findings) and estimated control state (posture). Each finding provides evidence of a control coverage gap at a specific boundary, and the posture formula operationalizes that gap into a quantitative score:
 
 ```
-P_C := max(0, 1 - (1/K) · Σᵢ∈G_C w(sᵢ))                    (1)
+P_C(B) := max(0, 1 - (1/K) · Σᵢ∈G_C(B) w(sᵢ))              (1)
 ```
 
 where:
-- *P_C* = posture for security control category *C* ∈ {auth, crypto, validation, logging}
-- *G_C* = set of base variables (findings) classified into category *C*
+- *P_C(B)* = posture for security control category *C* at boundary *B*
+- *G_C(B)* = set of findings classified into category *C* at boundary *B*
 - *w(s_i)* = severity weight of finding *i* according to Table II
 - *K* = 3.0 (calibration constant)
 
@@ -245,9 +245,9 @@ When CWE identifiers are unavailable — common with Semgrep pattern-based rules
 | Missing WAF, no rate limiting | Input Validation | Missing web application firewall |
 | Missing CloudTrail, no access logging | Audit Logging | `terraform.aws.security.missing-cloudtrail` |
 
-### D. Attack Path Scoring Formula
+### D. Attack Path Scoring Heuristic
 
-Each attack path discovered by the graph traversal algorithm (Section III-F) is scored using a composite exploitability formula:
+Each attack path discovered by the graph traversal algorithm (Section III-F) is scored using a composite exploitability heuristic. This is not a causal formula — it is a ranking function used within the broader causal framework to prioritize paths for remediation:
 
 ```
 S(path) = (α · B_norm + β · E_norm + γ · A_norm + δ · D_max) · L_factor    (2)
@@ -257,7 +257,7 @@ where:
 - *B_norm* = boundary_crossings / hops (normalised trust boundary violations)
 - *E_norm* = unencrypted_hops / hops (normalised encryption gaps)
 - *A_norm* = unauthenticated_hops / hops (normalised authentication gaps)
-- *D_max* = max sensitivity weight across all flows in the path
+- *D_max* = maximum data sensitivity weight across all flows in the path (target sensitivity)
 - *L_factor* = 1 / √(hops) (shorter paths are more exploitable)
 - *α* = 0.30, *β* = 0.25, *γ* = 0.25, *δ* = 0.20 (empirically assigned)
 
@@ -525,9 +525,11 @@ STRIDE POSTURE COMPARISON (23 SAST + 10 DAST)
 
 ### A. Posture-Based Reasoning vs. Vulnerability Counting
 
-The shift from counting vulnerabilities to computing architectural posture fundamentally changes what the tool can reason about. A vulnerability counter reports "23 findings — fix them." CausalTM reports "your validation posture at the API boundary is 30%, meaning 70% of the expected validation coverage is absent at this specific trust boundary — this causes a Tampering threat because unvalidated data crosses that boundary."
+The shift from counting vulnerabilities to computing architectural posture fundamentally changes what the tool can reason about. A vulnerability counter reports "23 findings — fix them." CausalTM reports "the model estimates validation posture at the API boundary at 30%, indicating that significant control coverage gaps exist at this trust boundary — this triggers a Tampering threat because unvalidated data crosses that boundary."
 
-The v3 refinement — treating findings as evidence of boundary-specific control coverage gaps — makes the causal claim more precise and defensible. A single SQL injection finding does not prove the entire architecture lacks validation; it proves validation is incomplete at THAT boundary. Other boundaries where no findings exist retain full posture. This avoids the false generalization problem inherent in global aggregation approaches.
+The v3 refinement — treating findings as evidence of boundary-specific control coverage gaps — makes the reasoning more precise and defensible. A single SQL injection finding is strong evidence that validation is incomplete at THAT boundary, but does not prove the entire architecture lacks validation. Other boundaries where no findings exist retain full posture. This avoids the false generalization problem inherent in global aggregation approaches.
+
+CausalTM is not merely a vulnerability counting system. It models security findings as evidence of boundary-specific control gaps, aggregates those gaps into architectural posture estimates, and uses the posture model to simulate interventions and predict their effect on risk and threat classification. The framework supports interventional and counterfactual-style reasoning — by simulating changes and recomputing posture and threat thresholds — rather than only observational ranking.
 
 ### B. Value of Cross-Layer Propagation
 
