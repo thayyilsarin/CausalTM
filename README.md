@@ -2,13 +2,55 @@
 
 **Automated STRIDE Threat Modeling powered by a Federated Structural Causal Model**
 
+> **Paper artifact.** This repository is the artifact for the paper *"A Federated Structural Causal Model for Automated STRIDE Threat Modeling from Multi-Source Security Intelligence"* (AMICT 2026). To regenerate every result reported in the paper, see [Reproducing the AMICT 2026 paper](#reproducing-the-amict-2026-paper). To cite it, see [How to cite](#how-to-cite).
+
 ---
 
 ## What Is CausalTM?
 
 CausalTM is a security tool that automatically produces a threat model for a software system. You give it your code repository and security scan reports. It gives you back a Data Flow Diagram, a list of STRIDE threats ranked by causal severity, concrete attack paths showing how an attacker could move through your system, and specific recommendations telling you which fix blocks the most threats.
 
-The core innovation is the **Federated Structural Causal Model (FSCM)** — a causal AI architecture that reasons about cause and effect rather than statistical correlation. It does not require historical training data, does not suffer from concept drift, and produces explanations that auditors and regulators can follow.
+The core idea is the **Federated Structural Causal Model (FSCM)**: separate causal sub-models for code, runtime and architecture evidence, combined by explicit rules. It treats each scanner finding as evidence of a gap in control coverage at a specific trust boundary, rather than counting vulnerabilities. It does not require historical training data, and every result can be traced back to the findings and rules that produced it.
+
+---
+
+## Engine Versions
+
+The repository contains three engines. Only the boundary-specific engine (v3) is evaluated in the paper.
+
+| Engine | Location | Used by | Description |
+|---|---|---|---|
+| Federated (v1) | `src/causal/federated/` | API server, `scripts/demo_full_pipeline.py` | Three sub-graphs (SAST, DAST, repository) feeding a master DAG; described in detail below |
+| Global posture (v2) | `src/causal/v2/` | `scripts/run_v2_full.py` | One posture value per control category across the whole system; the baseline in the paper |
+| Boundary-specific (v3) | `src/causal/v3/` | `scripts/eval_juice_shop_v3_full.py` | Posture per control category **and** trust boundary, fusion with worst-case adjustment, hybrid STRIDE classification; the engine evaluated in the paper |
+
+---
+
+## Reproducing the AMICT 2026 paper
+
+All results in the paper regenerate from fixtures committed to this repository. No scanner, network access or clone of the target application is needed.
+
+**Requirements:** Python 3.11 or later, plus `networkx` and `pydantic`:
+
+```bash
+git clone https://github.com/thayyilsarin/CausalTM.git
+cd CausalTM
+pip install networkx pydantic
+```
+
+**Inputs (fixtures):** `src/causal/v3/fixtures/juice_shop_full.py` holds the OWASP Juice Shop component graph (6 components, 5 data flows, 3 trust boundaries), the 23 SAST findings (Semgrep, rule sets p/javascript and p/nodejs) and the 10 DAST findings (OWASP ZAP baseline scan of a running instance).
+
+**Run, from the repository root, in this order:**
+
+| Step | Command | Regenerates |
+|---|---|---|
+| 1 | `python scripts/eval_juice_shop_v3_full.py` | Canonical v3 results, STRIDE threats, fused posture per control category and boundary, attack paths, what-if analysis. Writes `data/eval-v3-full-juice-shop.json` and `data/reports/juice-shop-v3-full-report.md` |
+| 2 | `python scripts/run_v2_full.py` | v2 (global) results and the v2 vs v3 comparison, including roadmap length and STRIDE posture per category. Reads the JSON written in step 1 |
+| 3 | `python scripts/sensitivity_sweep.py` | Parameter sensitivity: the 20 combinations of K in {2.0, 3.0, 4.0, 5.0} (SAST and DAST sub-DAGs) and alpha in {0.4, 0.5, 0.6, 0.7, 0.8} (fusion layer) |
+
+**Expected key values:** v3 overall risk 0.404 (Medium) against 0.431 for v2; 6 STRIDE threats (5 rule-matched, 1 posture-derived); 5 uncertain divergences; remediation roadmap of 4 steps for v3 against 8 for v2. Across the 20 sensitivity settings, overall risk ranges from 0.336 to 0.473, while threats, categories, classification split and roadmap length are unchanged.
+
+**Scope of the evaluation:** the paper compares global (v2) and boundary-specific (v3) aggregation on identical inputs. It does not measure detection accuracy, analyst effort or cost. The component graph is supplied directly from the fixtures; automatic derivation of the architecture from a repository (`src/analyzer/detectors/`) is implemented but not evaluated in the paper.
 
 ---
 
@@ -99,7 +141,7 @@ CausalTM produces five outputs from a single analysis run.
 **Format:** HTML (self-contained, professional, printable) + Markdown
 
 **What it contains:**
-1. Executive Summary — risk score (0-10), critical/high/medium/low counts
+1. Executive Summary — threat-based risk score out of 10, critical/high/medium/low counts
 2. Component Inventory — table of all detected elements with security properties
 3. Data Flow Diagram — embedded SVG
 4. STRIDE Threat Catalog — all identified threats grouped by category, with:
@@ -109,7 +151,7 @@ CausalTM produces five outputs from a single analysis run.
    - CWE references
    - Recommended mitigations
 5. Attack Paths — top causal chains from attacker entry to business impact
-6. Counterfactual Recommendations — "if you fix X, risk drops by Y%"
+6. What-If Recommendations — "if you fix X, modelled risk drops by Y%"
 7. Confounder Warnings — factors that may inflate or deflate perceived risk
 
 ### 3. Causal Attack Graph
@@ -125,13 +167,14 @@ CausalTM produces five outputs from a single analysis run.
 - Choke points — components that appear on the most paths (fix these first)
 - Narratives in plain English: "Attacker targets Web Service, exploits SQL injection, accesses database, resulting in data breach."
 
-### 4. Counterfactual Mitigation Recommendations
+### 4. What-If (Interventional) Mitigation Recommendations
 
 **Format:** Ranked list with quantified impact
 
 **What it provides:**
-- Strategic interventions (cross-layer): "Fix all critical SAST findings → 29.8% risk reduction"
-- Tactical interventions (specific): "Add API gateway → 15.4% risk reduction"
+- Strategic interventions (cross-layer), for example: "Fix all critical SAST findings → X% modelled risk reduction"
+- Tactical interventions (specific), for example: "Add API gateway → Y% modelled risk reduction"
+- Reductions are computed by the causal model, not measured on a running system
 - Each recommendation shows: risk before, risk after, percentage reduction, affected layers
 - Ranked by effectiveness — highest impact first
 
@@ -140,7 +183,7 @@ CausalTM produces five outputs from a single analysis run.
 **Format:** JSON (machine-readable for integration)
 
 **What it provides:**
-- Overall risk score: 0.0 to 1.0 with rating (Minimal/Low/Medium/High/Critical)
+- Overall causal risk: 0.0 to 1.0 with rating (Minimal/Low/Medium/High/Critical). This is separate from the threat-based score out of 10 shown in the HTML report
 - Layer contributions: how much each data source drives the risk (e.g., SAST: 42%, DAST: 23%, Repo: 35%)
 - Intermediate scores: exploitability, exposure, impact severity, blast radius, mitigation posture
 - Graph statistics: nodes, edges, paths found per layer
@@ -148,6 +191,8 @@ CausalTM produces five outputs from a single analysis run.
 ---
 
 ## What Happens Inside (The Processing Pipeline)
+
+This section describes the full pipeline used by the API server and the demo, which runs the federated (v1) engine. The paper's v3 engine shares the inputs and STRIDE stage but computes posture per trust boundary; see [Engine Versions](#engine-versions).
 
 ```
 INPUT                           PROCESSING                              OUTPUT
@@ -267,7 +312,7 @@ This is the core innovation. Three independent causal sub-graphs are built:
 │                 × (1 - Mitigation × 0.4)                            │
 │                                                                     │
 │  Also performs:                                                      │
-│    • Strategic counterfactuals (set edge nodes to 0, recompute)     │
+│    • Strategic what-if interventions (set edge nodes to 0, recompute)│
 │    • Cross-layer confounder detection                               │
 │    • Layer contribution analysis (which source drives risk)         │
 │                                                                     │
@@ -295,7 +340,7 @@ This is the core innovation. Three independent causal sub-graphs are built:
 
 The federated engine performs:
 - **Attack path enumeration** — all causal chains from entry to impact
-- **Counterfactual analysis** — "if we fix X, how many paths break?"
+- **What-if (interventional) analysis** — "if we fix X, how many paths break?"
 - **Confounder detection** — "is internet exposure inflating this risk?"
 - **Impact propagation** — "if this component falls, what else is affected?"
 - **Layer contribution** — "is risk driven by code vulns, runtime exploits, or architecture?"
@@ -322,22 +367,20 @@ All results are assembled into an HTML report using Jinja2 templates:
 - Embedded DFD diagram
 - Threat catalog grouped by STRIDE category
 - Attack paths with narratives
-- Counterfactual recommendations ranked by impact
+- What-if recommendations ranked by impact
 
 ---
 
-## Why Causal AI Instead of Machine Learning?
+## How CausalTM Differs from ML-Based Prioritisation
 
-| Question | Correlation AI (ML) | CausalTM (Causal AI) |
-|---|---|---|
-| "What's our risk?" | Outputs a score | Outputs a score **with explanation** |
-| "Why is it risky?" | "The model says so" | "Because CWE-89 in the web service enables access to the database which stores PII" |
-| "What should we fix first?" | Can't answer this | "Fix SAST critical findings → 29.8% risk reduction" |
-| "What if we add a gateway?" | Can't answer this | "Risk drops from 0.45 to 0.38 (15.4% reduction)" |
-| Needs training data? | Yes (thousands of labeled examples) | **No** (works from first scan) |
-| Degrades over time? | Yes (concept drift) | **No** (causal mechanisms are stable) |
-| Works at new organisation? | Must retrain | **Works immediately** |
-| Auditor-friendly? | No (black box) | **Yes** (full causal chain visible) |
+Machine-learning approaches to vulnerability prioritisation learn from historical exploitation data and rank individual vulnerabilities. CausalTM takes a different route:
+
+- **No training data.** It reasons from the system's own architecture and scan findings, so it can run on the first scan of a new system.
+- **Architecture-aware.** Findings are attached to the trust boundaries and data flows they affect, so results are localised to where a control is missing.
+- **Traceable.** Each threat and recommendation can be traced back to the findings, boundaries and rules that produced it.
+- **What-if questions.** It can estimate how modelled risk changes if a control is fixed (an interventional query).
+
+**Limitations.** The severity weights, the calibration constant K, the fusion weight alpha and the cross-layer rule strengths are set by expert judgement, not calibrated from data. What-if results are model predictions; they have not been compared with measurements on a running system. Counterfactual queries in the formal sense (reasoning about what would have happened in a specific past case) are not implemented. See the paper's limitations section for details.
 
 ---
 
@@ -384,9 +427,12 @@ CausalTM/
 │   │   │   ├── sast_subgraph.py       # Code-level causal reasoning
 │   │   │   ├── dast_subgraph.py       # Runtime-level causal reasoning
 │   │   │   ├── repo_subgraph.py       # Architecture-level causal reasoning
-│   │   │   ├── master_dag.py          # Cross-layer reasoning + counterfactuals
+│   │   │   ├── master_dag.py          # Cross-layer reasoning + what-if analysis
 │   │   │   ├── attack_graph.py        # Concrete attack path composition
 │   │   │   └── engine.py             # FederatedCausalEngine orchestrator
+│   │   ├── v2/                         # Global-posture engine (paper baseline)
+│   │   ├── v3/                         # Boundary-specific engine (evaluated in the paper)
+│   │   │   └── fixtures/              # Juice Shop graph + 23 SAST and 10 DAST findings
 │   │   ├── engine.py                   # Legacy flat engine (backward compatible)
 │   │   └── models.py                   # Legacy models
 │   ├── dfd/                             # Data Flow Diagram construction
@@ -404,11 +450,16 @@ CausalTM/
 ├── rules/
 │   └── default.yaml                    # 16 built-in STRIDE rules
 ├── scripts/
+│   ├── eval_juice_shop_v3_full.py      # Paper: v3 evaluation on Juice Shop
+│   ├── run_v2_full.py                  # Paper: v2 baseline and v2 vs v3 comparison
+│   ├── sensitivity_sweep.py            # Paper: K and alpha sensitivity (20 settings)
 │   ├── test_engine.py                  # Quick causal engine test
 │   └── demo_full_pipeline.py          # End-to-end demo with sample data
 ├── .github/workflows/
 │   └── ci.yml                          # GitHub Actions: lint, test, demo
-├── docs/                                # Research documents, paper drafts
+├── data/                                # Evaluation outputs (JSON, Markdown)
+├── tests/                               # Unit tests for the v3 engine
+├── CITATION.cff                         # Citation metadata (used by GitHub and Zenodo)
 ├── Dockerfile                           # Container deployment
 ├── docker-compose.yml                   # Full stack (API + Redis + Postgres)
 └── pyproject.toml                       # Dependencies and build config
@@ -450,11 +501,19 @@ uvicorn src.main:app --reload --port 8000
 
 ---
 
+## How to Cite
+
+If you use CausalTM, please cite the paper:
+
+> S. K. Thayyilsubramanian, R. Srinivasan, and S. Chamarajanagar Ramachandra Rao, "A Federated Structural Causal Model for Automated STRIDE Threat Modeling from Multi-Source Security Intelligence," in *Proceedings of the 2026 International Conference on Advances in Machine Intelligence, and Cybersecurity Technologies (AMICT)*, IEEE, 2026.
+
+Citation metadata is also provided in [`CITATION.cff`](CITATION.cff); GitHub's "Cite this repository" button uses it.
+
+---
+
 ## Research Context
 
-This tool is the artifact for a DBA dissertation at Rushford Business School, exploring whether Federated Structural Causal Models can improve cybersecurity risk decision-making compared to traditional approaches. The research is also being prepared for publication at AMICT 2026 (IEEE Xplore + Scopus indexed).
-
-**Key research question:** Does causal counterfactual analysis improve the quality of cybersecurity investment decisions over traditional severity-based prioritisation?
+CausalTM was developed as part of doctoral research (DBA) at Rushford Business School on whether Federated Structural Causal Models can improve cybersecurity risk decisions compared with severity-based prioritisation. The evaluation reported in the paper is deliberately narrow: it isolates the effect of boundary-specific aggregation on threat localisation and remediation roadmap length.
 
 ---
 
