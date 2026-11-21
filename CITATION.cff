@@ -3,7 +3,7 @@ message: "If you use this software, please cite the paper listed under preferred
 title: "CausalTM: Federated Structural Causal Model for Automated STRIDE Threat Modeling"
 type: software
 version: "1.0.1-amict2026"
-date-released: "2026-11-13"
+date-released: "2026-11-21"
 license: MIT
 repository-code: "https://github.com/thayyilsarin/CausalTM"
 keywords:
@@ -14,13 +14,23 @@ keywords:
 authors:
   - given-names: "Sarin Kumar"
     family-names: "Thayyilsubramanian"
-    affiliation: "Rushford Business School, Switzerland"
+    affiliation: "Rushford Business School"
+  - given-names: "Rajkumar"
+    family-names: "Srinivasan"
+    affiliation: "Boeing India Private Limited"
+  - given-names: "Srikanth"
+    family-names: "Chamarajanagar Ramachandra Rao"
+    affiliation: "The Boeing Company"
 preferred-citation:
   type: conference-paper
   title: "A Federated Structural Causal Model for Automated STRIDE Threat Modeling from Multi-Source Security Intelligence"
   authors:
     - given-names: "Sarin Kumar"
       family-names: "Thayyilsubramanian"
+    - given-names: "Rajkumar"
+      family-names: "Srinivasan"
+    - given-names: "Srikanth"
+      family-names: "Chamarajanagar Ramachandra Rao"
   collection-title: "Proceedings of the 2026 International Conference on Advances in Machine Intelligence, and Cybersecurity Technologies (AMICT)"
   publisher:
     name: "IEEE"
